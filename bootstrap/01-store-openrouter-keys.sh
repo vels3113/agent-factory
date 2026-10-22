@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Store the OpenRouter API keys on the VM, readable only by the current user.
-# Prompts for the keys so they never appear in shell history or this repo.
+# Store OpenRouter API keys on the VM, readable only by the current user.
+# Prompts for any number of named keys so they never appear in shell history or this repo.
+# Each key is written as OPENROUTER_KEY_<NAME>=... (name upper-cased, '-' becomes '_').
 set -euo pipefail
 
 secrets_dir="${AGENT_SECRETS_DIR:-$HOME/.config/agent-secrets}"
@@ -11,20 +12,32 @@ if [[ -e "$env_file" ]]; then
     [[ "$answer" == [yY] ]] || { echo "Kept existing file."; exit 0; }
 fi
 
-read -r -s -p "OpenRouter key 'interactive' (\$4 limit): " key_interactive; echo
-read -r -s -p "OpenRouter key 'background' (\$5 limit): " key_background; echo
-
-for key in "$key_interactive" "$key_background"; do
-    [[ "$key" == sk-or-* ]] || { echo "Error: keys must start with 'sk-or-'." >&2; exit 1; }
+lines=()
+names=()
+while true; do
+    read -r -p "Key name (empty to finish): " name
+    [[ -n "$name" ]] || break
+    if [[ ! "$name" =~ ^[A-Za-z][A-Za-z0-9_-]*$ ]]; then
+        echo "Error: name must start with a letter and contain only letters, digits, '_' or '-'." >&2
+        continue
+    fi
+    var="OPENROUTER_KEY_$(tr '[:lower:]-' '[:upper:]_' <<< "$name")"
+    if [[ " ${names[*]-} " == *" $var "* ]]; then
+        echo "Error: $var already entered." >&2
+        continue
+    fi
+    read -r -s -p "Key '$name': " key; echo
+    [[ "$key" == sk-or-* ]] || { echo "Error: keys must start with 'sk-or-'." >&2; continue; }
+    names+=("$var")
+    lines+=("$var=$key")
 done
+
+(( ${#lines[@]} > 0 )) || { echo "Error: no keys entered." >&2; exit 1; }
 
 mkdir -p "$secrets_dir"
 chmod 700 "$secrets_dir"
 umask 077
-cat > "$env_file" <<KEYS
-OPENROUTER_KEY_INTERACTIVE=$key_interactive
-OPENROUTER_KEY_BACKGROUND=$key_background
-KEYS
+printf '%s\n' "${lines[@]}" > "$env_file"
 chmod 600 "$env_file"
 
-echo "Saved $env_file (mode 600)."
+echo "Saved ${#lines[@]} key(s) to $env_file (mode 600): ${names[*]}"

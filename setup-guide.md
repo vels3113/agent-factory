@@ -5,7 +5,7 @@
 1. Create an OpenRouter account; buy $10 of credit (about $9.45 usable after the fee).
 2. **Disable automatic top-ups** (Settings → Credits).
 3. Create two API keys with credit limits (https://openrouter.ai/settings/keys):
-4. Store the keys on the VM (prompts for both keys; writes `~/.config/agent-secrets/openrouter.env`, mode 600):
+4. Store the keys on the VM (prompts for a name and a key, repeatedly, until you enter an empty name; writes `OPENROUTER_KEY_<NAME>` lines to `~/.config/agent-secrets/openrouter.env`, mode 600):
 
    ```bash
    bootstrap/01-store-openrouter-keys.sh
