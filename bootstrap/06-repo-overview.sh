@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Summarize the project repo's layout for drafting the AGENTS.md codebase map.
+# Read-only; output is bounded so it can be pasted into a chat.
+# Usage: 06-repo-overview.sh <path-to-project-repo> [output-file]
+set -uo pipefail
+
+repo="${1:?Usage: $0 <path-to-project-repo> [output-file]}"
+out="${2:-${AGENT_FACTORY_DIR:-$HOME/.agent-factory}/repo-overview.txt}"
+cd "$repo" || { echo "Error: cannot cd to $repo" >&2; exit 1; }
+mkdir -p "$(dirname "$out")"
+
+section() { printf '\n## %s\n' "$1"; }
+
+{
+    printf '# Repo overview — %s — %s\n' "$(basename "$(pwd)")" "$(date -Iseconds)"
+    printf 'Tracked files: %s\n' "$(git ls-files | wc -l)"
+
+    section "Files by extension (top 15)"
+    git ls-files | sed -n 's/.*\.\([^./]*\)$/\1/p' | sort | uniq -c | sort -rn | head -n 15
+
+    section "Directories, two levels (tracked files per directory, top 40)"
+    git ls-files | awk -F/ 'NF>1 {print (NF>2 ? $1"/"$2 : $1)}' | sort | uniq -c | sort -rn | head -n 40
+
+    section "Build entry points (depth <= 3)"
+    git ls-files | grep -E '(^|/)(CMakeLists\.txt|[A-Za-z]*[Mm]akefile|.*\.mk|.*\.cmake|configure(\.ac)?|Jenkinsfile)$' \
+        | awk -F/ 'NF<=4' | head -n 30
+
+    section "flex sources"
+    git ls-files '*.l' | head -n 30
+
+    section "Likely test directories"
+    git ls-files | awk -F/ '{for (i=1; i<NF; i++) if ($i ~ /^(tests?|unittests?|testing|qa|gtest?)$/) {p=$1; for (j=2; j<=i; j++) p=p"/"$j; print p; break}}' \
+        | sort -u | head -n 20
+
+    section "Ignored build output (.gitignore, top level)"
+    [[ -f .gitignore ]] && grep -vE '^\s*(#|$)' .gitignore | head -n 30
+
+    section "Docs at the top two levels"
+    git ls-files | grep -iE '^([^/]+/)?(README|CONTRIBUTING|BUILD|INSTALL|docs)[^/]*$' | head -n 20
+} | tee "$out"
+
+echo
+echo "Saved to $out"
