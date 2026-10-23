@@ -12,7 +12,7 @@ Instructions for AI agents working in this repository. Permissions are enforced 
 
 ## Build and test
 
-<!-- TODO: build system (CMake or Make), build directory, how to build one target, how to run one test. -->
+<!-- TODO: build system, build directory, how to build one target, how to run one test. -->
 
 - Check your change with `agent-check.sh` only. It builds the affected target and runs targeted tests with short output.
 - Do not run a full build or the full test suite unless the task asks for it.

@@ -37,6 +37,7 @@ These decisions were settled in the design discussion; reopen only with a reason
 | --- | --- | --- |
 | Provider-neutral harness (OpenCode) | User requires provider neutrality; keeps models swappable | Vendor-specific harnesses (e.g. Claude Code) |
 | OpenCode v2, pinned (2.1.3) | Current major version (stable on npm); avoids a v1-to-v2 config migration later | OpenCode v1 (the plan was first checked against v1 docs) |
+| `AGENTS.md` and OpenCode config kept outside the project repo, in a parent folder named after the project | The team repo stays unchanged (other team members are out of scope); OpenCode finds project config in parent directories, so one copy serves the repo and every worktree, scoped to this project | Committing them to the project repo; global OpenCode config (applies to every project) |
 | Agents run on the dev VM | Git and Jenkins are internal; the VM runs 24/7 | Cloud-hosted background agents |
 | Split agents by task difficulty, not by workflow | Cost savings come from model routing; workflow data does not exist yet | Workflow-specific agents from day 1 |
 | OpenRouter for billing in the trial | One $10 top-up covers all providers; per-key limits | Direct provider accounts, LiteLLM gateway (deferred to Phase 2) |
@@ -55,7 +56,7 @@ OpenCode + OpenRouter + `AGENTS.md` + Bash orchestration; no other services in P
 | --- | --- | --- |
 | Harness | [OpenCode v2](https://opencode.ai/v2/docs) | Open-source, model-agnostic terminal agent. Pinned to 2.1.3; `"update": "disable"` in the global config. A v2 VS Code integration is not verified; the integrated terminal over Remote-SSH works regardless. |
 | Billing and routing | OpenRouter | One account for many providers; spend visible per key, model and provider. |
-| Instructions | `AGENTS.md` | Portable across tools. Includes a short codebase map (architecture, key directories, build entry points). Permissions are enforced in tool config, not in this file. |
+| Instructions | `AGENTS.md` | Portable across tools. Includes a short codebase map (architecture, key directories, build entry points). Permissions are enforced in tool config, not in this file. Kept outside the project repo at `~/<project>/instructions/AGENTS.md` and loaded through the [`instructions`](https://opencode.ai/v2/docs/instructions/) key in `~/<project>/opencode.jsonc`; drafted and refreshed with OpenCode `/init`. |
 | Code navigation | clangd + `compile_commands.json` | Optional at first if generating the compilation database is hard. CMake: `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON`; Make: `bear -- make`. |
 | Orchestration | Bash scripts | Task lifecycle, Git, Jenkins polling, retries, budget checks. |
 | Isolation | Git worktree + branch per background task | Layout: `~/<project>/main/` (repo), `~/<project>/worktrees/<task-id>/` (branch `agent/<task-id>`), with the OpenCode config and `AGENTS.md` in `~/<project>/`. Build-directory layout decided by iteration (section 8). |
