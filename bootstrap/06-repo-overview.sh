@@ -18,8 +18,9 @@ section() { printf '\n## %s\n' "$1"; }
     section "Files by extension (top 15)"
     git ls-files | sed -n 's/.*\.\([^./]*\)$/\1/p' | sort | uniq -c | sort -rn | head -n 15
 
-    section "Directories, two levels (tracked files per directory, top 40)"
-    git ls-files | awk -F/ 'NF>1 {print (NF>2 ? $1"/"$2 : $1)}' | sort | uniq -c | sort -rn | head -n 40
+    section "Directories, two levels (alphabetical; tracked files below each)"
+    git ls-files | awk -F/ 'NF>1 {print $1} NF>2 {print $1"/"$2}' | sort | uniq -c \
+        | awk '{printf "%-42s %6d\n", ($2 ~ /\// ? "  " : "") $2, $1}' | head -n 200
 
     section "Build entry points (depth <= 3)"
     git ls-files | grep -E '(^|/)(CMakeLists\.txt|[A-Za-z]*[Mm]akefile|.*\.mk|.*\.cmake|configure(\.ac)?|Jenkinsfile)$' \
@@ -35,8 +36,11 @@ section() { printf '\n## %s\n' "$1"; }
     section "Ignored build output (.gitignore, top level)"
     [[ -f .gitignore ]] && grep -vE '^\s*(#|$)' .gitignore | head -n 30
 
-    section "Docs at the top two levels"
-    git ls-files | grep -iE '^([^/]+/)?(README|CONTRIBUTING|BUILD|INSTALL|docs)[^/]*$' | head -n 20
+    section "Docs: README-type files at the top two levels"
+    git ls-files | grep -iE '^([^/]+/)?(README|CONTRIBUTING|BUILD|INSTALL)[^/]*$' | head -n 20
+
+    section "Docs: paths matching *docs* (tracked files per directory)"
+    git ls-files | grep -i 'docs' | sed -e 's|/[^/]*$||' -e 't' -e 's|.*|(top level)|' | sort | uniq -c | head -n 30
 } | tee "$out"
 
 echo
