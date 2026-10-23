@@ -1,0 +1,61 @@
+{
+  // Project config, installed by bootstrap/03-project-layout.sh as
+  // <project>/opencode.jsonc, above the repo (main/) and the task worktrees, so
+  // every checkout under <project>/ loads it and nothing is committed.
+  // Docs: https://opencode.ai/v2/docs/config/ , /agents/ , /permissions/
+  // Interactive sessions prompt on every `ask`; background runs pass --auto,
+  // which approves `ask` but never overrides `deny`.
+  "$schema": "https://opencode.ai/config.json",
+  "default_agent": "build",
+
+  // Absolute path: relative entries are searched only up to the repo root.
+  // Kept out of the upward AGENTS.md search path, so it loads exactly once.
+  "instructions": ["TODO_INSTRUCTIONS_PATH"],
+
+  // Rules apply in order; the last match wins.
+  "permissions": [
+    { "action": "edit", "resource": "*", "effect": "ask" },
+    { "action": "shell", "resource": "*", "effect": "ask" },
+
+    // Read-only commands and the local check run without prompting.
+    { "action": "shell", "resource": "git status *", "effect": "allow" },
+    { "action": "shell", "resource": "git diff *", "effect": "allow" },
+    { "action": "shell", "resource": "git log *", "effect": "allow" },
+    { "action": "shell", "resource": "git show *", "effect": "allow" },
+    { "action": "shell", "resource": "agent-check.sh *", "effect": "allow" },
+
+    // Agents never push or touch remotes; the developer or orchestrator does.
+    { "action": "shell", "resource": "git push *", "effect": "deny" },
+    { "action": "shell", "resource": "git remote *", "effect": "deny" },
+
+    // Generated files and build output: edit the sources (.l, not the lexer .c).
+    // TODO: replace with the real paths from AGENTS.md (filled by /init).
+    { "action": "edit", "resource": "*lex.yy.c", "effect": "deny" },
+    { "action": "edit", "resource": "TODO_BUILD_DIR/*", "effect": "deny" },
+
+    // Agents never edit their own config or instructions.
+    { "action": "edit", "resource": "*opencode.jsonc", "effect": "deny" },
+    { "action": "edit", "resource": "*instructions/AGENTS.md", "effect": "deny" },
+  ],
+
+  // Models: TODO, chosen in a separate discussion. Until then the model lines
+  // stay commented out and agents use the model picked with /models.
+  // Format: openrouter/<vendor>/<model>[#<variant>]  https://opencode.ai/v2/docs/models/
+  "agents": {
+    "build": {
+      // "model": "openrouter/TODO_MAIN_MODEL",
+    },
+    "plan": {
+      // "model": "openrouter/TODO_MAIN_MODEL",
+    },
+    "explore": {
+      // "model": "openrouter/TODO_CHEAP_MODEL",
+    },
+    "ci-fix": {
+      "description": "First repair attempt from a Jenkins failure handoff",
+      "mode": "primary",
+      // "model": "openrouter/TODO_CHEAP_MODEL",
+      "system": "You fix one failing Jenkins build. The handoff gives the task, the diff summary, previous attempts and a failure excerpt. Make the smallest change that fixes the failure, run agent-check.sh, commit, and stop. Do not refactor or widen the scope. If the failure is not caused by the change (infrastructure, flaky test), say so and stop without editing.",
+    },
+  },
+}
