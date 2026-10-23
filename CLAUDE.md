@@ -8,7 +8,7 @@ Planning documents and setup scripts for an AI-agent workflow (OpenCode + OpenRo
 
 - [solution.md](solution.md): the plan of record. Problem, constraints, the **decision log** (section 3), stack, agents and model tiers, background loop, Jenkins integration, monitoring, trial phases (1a/1b/1c), Phase 2, risks.
 - [setup-guide.md](setup-guide.md): the step-by-step Phase 1a setup that uses the bootstrap scripts, plus corrections to the plan found while checking the docs.
-- [bootstrap/](bootstrap/): numbered, run-in-order setup scripts (`01-` OpenRouter keys, `02-` task ledger, `03-` VM fact report).
+- [bootstrap/](bootstrap/): numbered, run-in-order setup scripts (`01-` OpenRouter keys, `02-` task ledger, `03-` VM fact report, `04-` reserved for the OpenCode install, `05-` tool check after install).
 - `secrets/` is gitignored. Don't read it or commit anything from it.
 
 ## Working on the documents
@@ -22,7 +22,7 @@ Planning documents and setup scripts for an AI-agent workflow (OpenCode + OpenRo
 
 The bootstrap scripts share these patterns. New scripts (for example the planned `agent-task.sh`, `agent-check.sh` and `jenkins-status.sh` described in `solution.md` section 8) should follow them:
 
-- `#!/usr/bin/env bash` and `set -euo pipefail`. `03-vm-facts.sh` deliberately drops `-e` so one failing probe doesn't stop the report.
+- `#!/usr/bin/env bash` and `set -euo pipefail`. `03-vm-facts.sh` and `05-check-tools.sh` deliberately drop `-e` so one failing probe doesn't stop the report.
 - Locations can be overridden with env vars: `AGENT_SECRETS_DIR` (default `~/.config/agent-secrets`) and `AGENT_WORK_DIR` (default `~/agent-work`).
 - Idempotent and non-destructive: never overwrite existing state (ledger, keys) without asking.
 - Secrets are entered at a prompt (`read -s`), never passed as arguments or written to the repo. Files are mode 600 in a 700 directory.

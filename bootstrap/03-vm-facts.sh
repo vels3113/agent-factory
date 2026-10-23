@@ -10,13 +10,12 @@ mkdir -p "$(dirname "$out")"
 
 section() { printf '\n## %s\n' "$1"; }
 run() { printf '$ %s\n' "$*"; "$@" 2>&1 || printf '(exit %s)\n' "$?"; }
-version() { printf '%-8s ' "$1"; if command -v "$1" >/dev/null; then "$@" 2>&1 | head -n 1; else echo "not installed"; fi; }
 
 {
     printf '# VM facts — %s — %s\n' "$(hostname)" "$(date -Iseconds)"
     printf 'Repository: %s\n' "$(pwd)"
 
-    section "Build system (CMake or Make?)"
+    section "Build system"
     for f in CMakeLists.txt Makefile GNUmakefile configure meson.build; do
         [[ -e "$f" ]] && echo "found: $f"
     done
@@ -24,14 +23,6 @@ version() { printf '%-8s ' "$1"; if command -v "$1" >/dev/null; then "$@" 2>&1 |
 
     section "Git server"
     run git remote -v
-
-    section "Prerequisites"
-    version node --version
-    version npm --version
-    version git --version
-    version clangd --version
-    version bear --version
-    version ccache --version
 
     section "CPU and RAM"
     run nproc

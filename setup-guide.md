@@ -25,7 +25,7 @@ bootstrap/02-init-ledger.sh
 
 ## 3. VM fact check (answers the open questions)
 
-Reports build system, Git server, prerequisites, CPU/RAM and disk; saves to `~/agent-work/vm-facts.txt`:
+Reports build system, Git server, CPU/RAM and disk; saves to `~/agent-work/vm-facts.txt`:
 
 ```bash
 bootstrap/03-vm-facts.sh /path/to/project-repo
@@ -47,6 +47,18 @@ OpenCode v2 is now published alongside v1. The two install as different packages
 | Status | Mature | Release status unclear (the AUR package is named `opencode-beta`) |
 
 **Recommendation: v1, latest 1.x, pinned.** Everything in the plan was checked against v1, and Phase 1 favors stability over new features. Revisit v2 in Phase 2.
+
+## 5. Install OpenCode
+
+Pending the decision in step 4 (`bootstrap/04-` is reserved for the install script).
+
+## 6. Tool check
+
+Run after OpenCode is installed. Checks `opencode`, `git`, `clangd`, `ccache`, and the build tool; checks `bear` only for Make builds (CMake exports `compile_commands.json` itself). Exits non-zero if anything is missing:
+
+```bash
+bootstrap/05-check-tools.sh /path/to/project-repo
+```
 
 ## Corrections to the plan
 
