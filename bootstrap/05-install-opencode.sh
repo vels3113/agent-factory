@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install a pinned OpenCode v2 with the official installer (no Node needed)
 # and disable self-updates in the global config.
-# Usage: 04-install-opencode.sh   (override the version with OPENCODE_VERSION)
+# Usage: 05-install-opencode.sh   (override the version with OPENCODE_VERSION)
 set -euo pipefail
 
 version="${OPENCODE_VERSION:-2.1.3}"
@@ -34,7 +34,7 @@ if [[ -z "$config" ]]; then
     cat > "$config" <<'JSON'
 {
   "$schema": "https://opencode.ai/config.json",
-  // Pinned by bootstrap/04-install-opencode.sh; upgrade deliberately.
+  // Pinned by bootstrap/05-install-opencode.sh; upgrade deliberately.
   "update": "disable",
 }
 JSON

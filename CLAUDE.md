@@ -16,13 +16,13 @@ Planning documents and setup scripts for an AI-agent workflow (OpenCode + OpenRo
 - Settled decisions in the decision log are reopened only with a reason. Keep later edits consistent with it: provider-neutral harness (OpenCode, not Claude Code; no Anthropic models by default), agents on the VM, the LLM never waits on or polls Jenkins, and deterministic scripts handle Git, CI, retries and budget.
 - When a fact in `solution.md` turns out to be wrong (for example, OpenCode config details), record it under "Corrections to the plan" in `setup-guide.md` or fix it in `solution.md`. Don't let the two documents contradict each other.
 - OpenCode is **v2**, pinned to 2.1.3 (docs: https://opencode.ai/v2/docs, not the v1 docs at `/docs/`). v1 and v2 differ in config keys (`agents`, `update`, permission rules), so don't use v1 examples. `setup-guide.md` links to the relevant v2 doc sections; link to the official docs instead of restating their content.
-- Open questions that are still unknown (build system CMake vs. Make, Git server, VM resources) are answered by `bootstrap/03-vm-facts.sh` output. Don't assume them. VS Code runs locally and connects to the VM through Remote-SSH.
+- Open questions that are still unknown (build system CMake vs. Make, Git server, VM resources) are answered by `vm.env` from `bootstrap/04-vm-facts.sh`. Don't assume them. VS Code runs locally and connects to the VM through Remote-SSH.
 
 ## Script conventions
 
 The bootstrap scripts share these patterns. New scripts (for example the planned `agent-task.sh`, `agent-check.sh` and `jenkins-status.sh` described in `solution.md` section 8) should follow them:
 
-- `#!/usr/bin/env bash` and `set -euo pipefail`. `03-vm-facts.sh` and `05-check-tools.sh` deliberately drop `-e` so one failing probe doesn't stop the report.
+- `#!/usr/bin/env bash` and `set -euo pipefail`. `04-vm-facts.sh` and `06-check-tools.sh` deliberately drop `-e` so one failing probe doesn't stop the report.
 - Locations can be overridden with env vars: `AGENT_SECRETS_DIR` (default `~/.config/agent-secrets`) and `AGENT_FACTORY_DIR` (default `~/.agent-factory`).
 - Idempotent and non-destructive: never overwrite existing state (ledger, keys) without asking.
 - Secrets are entered at a prompt (`read -s`), never passed as arguments or written to the repo. Files are mode 600 in a 700 directory.

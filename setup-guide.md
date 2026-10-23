@@ -23,34 +23,54 @@ bootstrap/02-init-ledger.sh
 - `origin`: new / replayed
 - `outcome`: accepted / reworked / failed
 
-## 3. VM fact check (answers the open questions)
+## 3. Project layout
 
-Reports build system, Git server, CPU/RAM and disk; saves to `~/.agent-factory/vm-facts.txt`:
+`AGENTS.md` and the OpenCode config stay outside the repo (not committed, not in `.gitignore`). They live in a parent folder named after the project, above the repo and all task worktrees. OpenCode searches for project config from the current directory up to the filesystem root (https://opencode.ai/v2/docs/config/#locations), so every checkout under the parent loads it:
+
+```text
+~/<project>/
+├── opencode.jsonc            agents, permissions, "instructions" → instructions/AGENTS.md
+├── instructions/AGENTS.md    outside the upward AGENTS.md search, so it loads exactly once
+├── main/                     the repo
+└── worktrees/<task-id>/      one worktree per task, branch agent/<task-id>
+```
 
 ```bash
-bootstrap/03-vm-facts.sh /path/to/project-repo
+bootstrap/03-project-layout.sh <project> /path/to/project-repo   # or a Git URL to clone
+```
+
+- Asks before moving an existing clone to `~/<project>/main` (then runs `git worktree repair`). Reopen VS Code and terminals at the new path.
+- Creates `instructions/AGENTS.md` from [templates/AGENTS.md](templates/AGENTS.md) (step 7 fills it), and `opencode.jsonc` from [templates/opencode.jsonc](templates/opencode.jsonc) with the absolute `instructions` path (https://opencode.ai/v2/docs/instructions/). Never overwrites either file.
+- Parent folder location: `AGENT_PROJECTS_DIR` (default `~`).
+
+## 4. VM fact check
+
+Prints a report (build system, Git server, CPU/RAM, disk) and saves the values to `~/.agent-factory/vm.env` (`PROJECT_REPO`, `PROJECT_DIR`, `WORKTREES_DIR`, `BUILD_SYSTEM`, `GIT_REMOTE_URL`, `GIT_HOST`, `CPU_COUNT`, `DISK_FREE_GB`, …) for later scripts to source. Takes the project folder from step 3 (the repo is its `main/`); rerun it when the VM or repo changes:
+
+```bash
+bootstrap/04-vm-facts.sh ~/<project>
 ```
 
 VS Code runs locally and connects to the VM with Remote-SSH. OpenCode, clangd and the VS Code extensions therefore run on the VM: install extensions into the "SSH: <host>" side.
 
 Override locations with `AGENT_SECRETS_DIR` and `AGENT_FACTORY_DIR`.
 
-## 4. Install OpenCode v2
+## 5. Install OpenCode v2
 
 OpenCode **v2**, pinned to **2.1.3** (the stable `latest` on npm). Docs: https://opencode.ai/v2/docs (not the v1 docs at `/docs/`).
 
 ```bash
-bootstrap/04-install-opencode.sh
+bootstrap/05-install-opencode.sh
 ```
 
 - Uses the official v2 installer (`https://opencode.ai/v2/install --version 2.1.3`). Installs to `~/.opencode/bin` and adds it to your shell's PATH.
 - Asks before replacing an existing v1 install: v1 and v2 share the `opencode` command.
 - Creates `~/.config/opencode/opencode.jsonc` with `"update": "disable"`. This key works only in the global config. If a global config already exists, the script warns instead of editing it.
-- Another version: `OPENCODE_VERSION=2.x.y bootstrap/04-install-opencode.sh`, or `opencode upgrade 2.x.y --method curl`.
+- Another version: `OPENCODE_VERSION=2.x.y bootstrap/05-install-opencode.sh`, or `opencode upgrade 2.x.y --method curl`.
 
 Then connect OpenRouter with a selected key: run `opencode`, type `/connect`, choose OpenRouter, paste the key. Check with `opencode auth list`.
 
-## 5. Tool check
+## 6. Tool check
 
 Run after OpenCode is installed. Checks `opencode`, `git`, `clangd`, `ccache`, and the build tool; checks `bear` only for Make builds (CMake exports `compile_commands.json` itself). Exits non-zero if anything is missing:
 

@@ -58,7 +58,7 @@ OpenCode + OpenRouter + `AGENTS.md` + Bash orchestration; no other services in P
 | Instructions | `AGENTS.md` | Portable across tools. Includes a short codebase map (architecture, key directories, build entry points). Permissions are enforced in tool config, not in this file. |
 | Code navigation | clangd + `compile_commands.json` | Optional at first if generating the compilation database is hard. CMake: `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON`; Make: `bear -- make`. |
 | Orchestration | Bash scripts | Task lifecycle, Git, Jenkins polling, retries, budget checks. |
-| Isolation | Git worktree + branch per background task | Build-directory layout decided by iteration (section 8). |
+| Isolation | Git worktree + branch per background task | Layout: `~/<project>/main/` (repo), `~/<project>/worktrees/<task-id>/` (branch `agent/<task-id>`), with the OpenCode config and `AGENTS.md` in `~/<project>/`. Build-directory layout decided by iteration (section 8). |
 
 ## 5. Agents, agent classes and model tiers
 
@@ -76,7 +76,7 @@ Record exact model IDs, provider, cost and outcome for every task. Judge models 
 
 **Agent classes (credentials):**
 
-- **Restricted (default):** no push credentials. Runs as a separate Unix user so it cannot read the user's `~/.ssh`, `~/.git-credentials` or environment. The orchestrator commits and pushes.
+- **Restricted (default):** no push credentials. Runs as a separate Unix user so it cannot read the user's `~/.ssh`, `~/.git-credentials` or environment. The orchestrator commits and pushes. Its worktrees must sit under the project folder so it loads the same rules; the folder must be readable by that user.
 - **Push-enabled:** may push only to `agent/*` branches, using a dedicated Git account or key. Enforce the branch rule with server-side branch permissions if the Git server supports them; a client-side pre-push hook is a convention, not a security boundary.
 
 **OpenCode agents** (configured under `agents.<name>.model`, format `openrouter/<vendor>/<model>`, optional `#<variant>` for reasoning effort):

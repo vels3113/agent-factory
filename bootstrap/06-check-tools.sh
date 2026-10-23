@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Check the agent tooling on the VM after OpenCode is installed.
 # Checks bear only for Make builds; CMake generates compile_commands.json itself.
-# Reads the repo path and build system from vm.env (written by 03-vm-facts.sh).
-# Usage: 05-check-tools.sh [path-to-project-repo]
+# Reads the repo path and build system from vm.env (written by 04-vm-facts.sh).
+# Usage: 06-check-tools.sh [project-dir]   (overrides vm.env; the repo is <project-dir>/main)
 set -uo pipefail
 
 vm_env="${AGENT_FACTORY_DIR:-$HOME/.agent-factory}/vm.env"
@@ -10,11 +10,11 @@ if [[ -f "$vm_env" ]]; then
     # shellcheck source=/dev/null
     source "$vm_env"
 else
-    echo "Note: $vm_env not found; run 03-vm-facts.sh first. Detecting the build system here."
+    echo "Note: $vm_env not found; run 04-vm-facts.sh first. Detecting the build system here."
 fi
 
-repo="${1:-${PROJECT_REPO:-}}"
-[[ -n "$repo" ]] || { echo "Usage: $0 [path-to-project-repo] (required without vm.env)" >&2; exit 1; }
+if [[ -n "${1:-}" ]]; then repo="$1/main"; else repo="${PROJECT_REPO:-}"; fi
+[[ -n "$repo" ]] || { echo "Usage: $0 [project-dir] (required without vm.env)" >&2; exit 1; }
 cd "$repo" || { echo "Error: cannot cd to $repo" >&2; exit 1; }
 
 missing=0

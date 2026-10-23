@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 # Summarize the project repo's layout for drafting the AGENTS.md codebase map.
 # Read-only; output is bounded so it can be pasted into a chat.
-# Usage: 06-repo-overview.sh <path-to-project-repo> [output-file]
+# Usage: 07-repo-overview.sh <project-dir> [output-file]   (the repo is <project-dir>/main)
 set -uo pipefail
 
-repo="${1:?Usage: $0 <path-to-project-repo> [output-file]}"
+project_dir="${1:?Usage: $0 <project-dir> [output-file]   (e.g. ~/<project>)}"
 out="${2:-${AGENT_FACTORY_DIR:-$HOME/.agent-factory}/repo-overview.txt}"
-cd "$repo" || { echo "Error: cannot cd to $repo" >&2; exit 1; }
+cd "$project_dir/main" || { echo "Error: cannot cd to $project_dir/main" >&2; exit 1; }
 mkdir -p "$(dirname "$out")"
 
 section() { printf '\n## %s\n' "$1"; }
 
 {
-    printf '# Repo overview — %s — %s\n' "$(basename "$(pwd)")" "$(date -Iseconds)"
+    printf '# Repo overview — %s — %s\n' "$(basename "$(cd "$project_dir" && pwd)")" "$(date -Iseconds)"
     printf 'Tracked files: %s\n' "$(git ls-files | wc -l)"
 
     section "Files by extension (top 15)"
