@@ -8,14 +8,14 @@ Planning documents and setup scripts for an AI-agent workflow (OpenCode + OpenRo
 
 - [solution.md](solution.md): the plan of record. Problem, constraints, the **decision log** (section 3), stack, agents and model tiers, background loop, Jenkins integration, monitoring, trial phases (1a/1b/1c), Phase 2, risks.
 - [setup-guide.md](setup-guide.md): the step-by-step Phase 1a setup that uses the bootstrap scripts, plus corrections to the plan found while checking the docs.
-- [bootstrap/](bootstrap/): numbered, run-in-order setup scripts (`01-` OpenRouter keys, `02-` task ledger, `03-` VM fact report, `04-` reserved for the OpenCode install, `05-` tool check after install).
+- [bootstrap/](bootstrap/): numbered, run-in-order setup scripts (`01-` OpenRouter keys, `02-` task ledger, `03-` VM fact report, `04-` OpenCode v2 install, `05-` tool check after install).
 - `secrets/` is gitignored. Don't read it or commit anything from it.
 
 ## Working on the documents
 
 - Settled decisions in the decision log are reopened only with a reason. Keep later edits consistent with it: provider-neutral harness (OpenCode, not Claude Code; no Anthropic models by default), agents on the VM, the LLM never waits on or polls Jenkins, and deterministic scripts handle Git, CI, retries and budget.
 - When a fact in `solution.md` turns out to be wrong (for example, OpenCode config details), record it under "Corrections to the plan" in `setup-guide.md` or fix it in `solution.md`. Don't let the two documents contradict each other.
-- OpenCode facts in the plan were checked against **v1** docs (https://opencode.ai/docs/). v2 (`@opencode/cli`) has a different, unverified config format. Don't mix the two.
+- OpenCode is **v2**, pinned to 2.1.3 (docs: https://opencode.ai/v2/docs, not the v1 docs at `/docs/`). v1 and v2 differ in config keys (`agents`, `update`, permission rules), so don't use v1 examples. `setup-guide.md` links to the relevant v2 doc sections; link to the official docs instead of restating their content.
 - Open questions that are still unknown (build system CMake vs. Make, Git server, VM resources) are answered by `bootstrap/03-vm-facts.sh` output. Don't assume them. VS Code runs locally and connects to the VM through Remote-SSH.
 
 ## Script conventions

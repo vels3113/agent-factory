@@ -36,6 +36,7 @@ These decisions were settled in the design discussion; reopen only with a reason
 | Decision | Rationale | Rejected alternative |
 | --- | --- | --- |
 | Provider-neutral harness (OpenCode) | User requires provider neutrality; keeps models swappable | Vendor-specific harnesses (e.g. Claude Code) |
+| OpenCode v2, pinned (2.1.3) | Current major version (stable on npm); avoids a v1-to-v2 config migration later | OpenCode v1 (the plan was first checked against v1 docs) |
 | Agents run on the dev VM | Git and Jenkins are internal; the VM runs 24/7 | Cloud-hosted background agents |
 | Split agents by task difficulty, not by workflow | Cost savings come from model routing; workflow data does not exist yet | Workflow-specific agents from day 1 |
 | OpenRouter for billing in the trial | One $10 top-up covers all providers; per-key limits | Direct provider accounts, LiteLLM gateway (deferred to Phase 2) |
@@ -52,7 +53,7 @@ OpenCode + OpenRouter + `AGENTS.md` + Bash orchestration; no other services in P
 
 | Layer | Choice | Notes |
 | --- | --- | --- |
-| Harness | [OpenCode](https://opencode.ai/docs/) | Open-source, model-agnostic terminal agent with a VS Code integration. Pin the version and set `OPENCODE_DISABLE_AUTOUPDATE` (a v2 with a different config format is out). |
+| Harness | [OpenCode v2](https://opencode.ai/v2/docs) | Open-source, model-agnostic terminal agent. Pinned to 2.1.3; `"update": "disable"` in the global config. A v2 VS Code integration is not verified; the integrated terminal over Remote-SSH works regardless. |
 | Billing and routing | OpenRouter | One account for many providers; spend visible per key, model and provider. |
 | Instructions | `AGENTS.md` | Portable across tools. Includes a short codebase map (architecture, key directories, build entry points). Permissions are enforced in tool config, not in this file. |
 | Code navigation | clangd + `compile_commands.json` | Optional at first if generating the compilation database is hard. CMake: `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON`; Make: `bear -- make`. |
@@ -78,7 +79,7 @@ Record exact model IDs, provider, cost and outcome for every task. Judge models 
 - **Restricted (default):** no push credentials. Runs as a separate Unix user so it cannot read the user's `~/.ssh`, `~/.git-credentials` or environment. The orchestrator commits and pushes.
 - **Push-enabled:** may push only to `agent/*` branches, using a dedicated Git account or key. Enforce the branch rule with server-side branch permissions if the Git server supports them; a client-side pre-push hook is a convention, not a security boundary.
 
-**OpenCode agents** (configured with a `model` per agent, format `provider/model-id`):
+**OpenCode agents** (configured under `agents.<name>.model`, format `openrouter/<vendor>/<model>`, optional `#<variant>` for reasoning effort):
 
 - `build` — main tier, implementation (primary).
 - `plan` — main tier, planning before larger changes (primary).
@@ -226,7 +227,7 @@ Add agents, models and infrastructure only when trial evidence justifies them.
 | Risk | Mitigation |
 | --- | --- |
 | Cheap models fail at tool calling in OpenCode | Smoke-test each model on one edit-build-fix loop before the trial |
-| OpenCode config/behavior changes (v2 released) | Pin the version; disable auto-update |
+| OpenCode config/behavior changes between 2.x releases | Pin the version; disable auto-update |
 | Long local builds outlast the prompt cache, so the next request is billed at full price | Pre-build worktrees; keep agent checks short |
 | Background builds slow interactive work | `nice`/`ionice`, lower `-j`, concurrency 1 |
 | Disk exhaustion from worktrees and build directories | Free-disk guard; cleanup; iterate on layout (section 8) |

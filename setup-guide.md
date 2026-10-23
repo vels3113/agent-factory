@@ -35,24 +35,22 @@ VS Code runs locally and connects to the VM with Remote-SSH. OpenCode, clangd an
 
 Override locations with `AGENT_SECRETS_DIR` and `AGENT_WORK_DIR`.
 
-## 4. DECISION: OpenCode v1 or v2
+## 4. Install OpenCode v2
 
-OpenCode v2 is now published alongside v1. The two install as different packages but share the `opencode` command, so only one can be installed under the default command.
+OpenCode **v2**, pinned to **2.1.3** (the stable `latest` on npm). Docs: https://opencode.ai/v2/docs (not the v1 docs at `/docs/`).
 
-| | v1 | v2 |
-| --- | --- | --- |
-| npm package | `opencode-ai` | `@opencode/cli` |
-| Docs | https://opencode.ai/docs/ | https://opencode.ai/v2/docs |
-| Plan's facts (agents with `model`, `opencode run` flags, OpenRouter setup) | Verified against these docs | Not verified; config format may differ |
-| Status | Mature | Release status unclear (the AUR package is named `opencode-beta`) |
+```bash
+bootstrap/04-install-opencode.sh
+```
 
-**Recommendation: v1, latest 1.x, pinned.** Everything in the plan was checked against v1, and Phase 1 favors stability over new features. Revisit v2 in Phase 2.
+- Uses the official v2 installer (`https://opencode.ai/v2/install --version 2.1.3`). Installs to `~/.opencode/bin` and adds it to your shell's PATH.
+- Asks before replacing an existing v1 install: v1 and v2 share the `opencode` command.
+- Creates `~/.config/opencode/opencode.jsonc` with `"update": "disable"`. This key works only in the global config. If a global config already exists, the script warns instead of editing it.
+- Another version: `OPENCODE_VERSION=2.x.y bootstrap/04-install-opencode.sh`, or `opencode upgrade 2.x.y --method curl`.
 
-## 5. Install OpenCode
+Then connect OpenRouter with a selected key: run `opencode`, type `/connect`, choose OpenRouter, paste the key. Check with `opencode auth list`.
 
-Pending the decision in step 4 (`bootstrap/04-` is reserved for the install script).
-
-## 6. Tool check
+## 5. Tool check
 
 Run after OpenCode is installed. Checks `opencode`, `git`, `clangd`, `ccache`, and the build tool; checks `bear` only for Make builds (CMake exports `compile_commands.json` itself). Exits non-zero if anything is missing:
 
@@ -60,7 +58,13 @@ Run after OpenCode is installed. Checks `opencode`, `git`, `clangd`, `ccache`, a
 bootstrap/05-check-tools.sh /path/to/project-repo
 ```
 
-## Corrections to the plan
+## OpenCode v2 documentation
 
-- Disabling auto-update: the documented setting is `"autoupdate": false` in `opencode.json`. Use it in addition to (or instead of) `OPENCODE_DISABLE_AUTOUPDATE`.
-- OpenRouter in OpenCode: connect it with `/connect` in the TUI (search "OpenRouter", paste the key). Model IDs have the form `openrouter/<vendor>/<model>`.
+- Config files and locations: https://opencode.ai/v2/docs/config/#locations
+- Auto-update setting: https://opencode.ai/v2/docs/config/#updates
+- OpenRouter setup: https://opencode.ai/v2/docs/providers/#gateways
+- Model IDs and variants: https://opencode.ai/v2/docs/models/#variants
+- Agents (model, mode, built-ins): https://opencode.ai/v2/docs/agents/#options
+- Permissions: https://opencode.ai/v2/docs/permissions/#rules
+- CLI automation (`opencode run`) and background service: https://opencode.ai/v2/docs/cli/#automation
+- Migrating from v1: https://opencode.ai/v2/docs/migrate-v1/
