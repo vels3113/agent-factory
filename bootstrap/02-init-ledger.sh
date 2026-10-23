@@ -2,7 +2,7 @@
 # Create the task ledger CSV. Never overwrites an existing ledger.
 set -euo pipefail
 
-work_dir="${AGENT_WORK_DIR:-$HOME/agent-work}"
+work_dir="${AGENT_FACTORY_DIR:-$HOME/.agent-factory}"
 ledger="$work_dir/ledger.csv"
 header="task_id,date,mode,origin,model,provider,session_id,api_cost_usd,agent_minutes,human_minutes,local_check_rounds,jenkins_rounds,build_minutes,disk_used_gb,outcome,notes"
 

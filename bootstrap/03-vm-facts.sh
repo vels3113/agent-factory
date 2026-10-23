@@ -4,7 +4,7 @@
 set -uo pipefail
 
 repo="${1:?Usage: $0 <path-to-project-repo> [output-file]}"
-out="${2:-${AGENT_WORK_DIR:-$HOME/agent-work}/vm-facts.txt}"
+out="${2:-${AGENT_FACTORY_DIR:-$HOME/.agent-factory}/vm-facts.txt}"
 cd "$repo" || { echo "Error: cannot cd to $repo" >&2; exit 1; }
 mkdir -p "$(dirname "$out")"
 

@@ -23,7 +23,7 @@ Planning documents and setup scripts for an AI-agent workflow (OpenCode + OpenRo
 The bootstrap scripts share these patterns. New scripts (for example the planned `agent-task.sh`, `agent-check.sh` and `jenkins-status.sh` described in `solution.md` section 8) should follow them:
 
 - `#!/usr/bin/env bash` and `set -euo pipefail`. `03-vm-facts.sh` and `05-check-tools.sh` deliberately drop `-e` so one failing probe doesn't stop the report.
-- Locations can be overridden with env vars: `AGENT_SECRETS_DIR` (default `~/.config/agent-secrets`) and `AGENT_WORK_DIR` (default `~/agent-work`).
+- Locations can be overridden with env vars: `AGENT_SECRETS_DIR` (default `~/.config/agent-secrets`) and `AGENT_FACTORY_DIR` (default `~/.agent-factory`).
 - Idempotent and non-destructive: never overwrite existing state (ledger, keys) without asking.
 - Secrets are entered at a prompt (`read -s`), never passed as arguments or written to the repo. Files are mode 600 in a 700 directory.
 - The ledger columns in `02-init-ledger.sh` must match the "Ledger fields per task" list in `solution.md` section 9.

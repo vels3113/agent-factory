@@ -13,7 +13,7 @@
 
 ## 2. Task ledger
 
-Creates `~/agent-work/ledger.csv` with the header row; never overwrites an existing ledger:
+Creates `~/.agent-factory/ledger.csv` with the header row; never overwrites an existing ledger:
 
 ```bash
 bootstrap/02-init-ledger.sh
@@ -25,7 +25,7 @@ bootstrap/02-init-ledger.sh
 
 ## 3. VM fact check (answers the open questions)
 
-Reports build system, Git server, CPU/RAM and disk; saves to `~/agent-work/vm-facts.txt`:
+Reports build system, Git server, CPU/RAM and disk; saves to `~/.agent-factory/vm-facts.txt`:
 
 ```bash
 bootstrap/03-vm-facts.sh /path/to/project-repo
@@ -33,7 +33,7 @@ bootstrap/03-vm-facts.sh /path/to/project-repo
 
 VS Code runs locally and connects to the VM with Remote-SSH. OpenCode, clangd and the VS Code extensions therefore run on the VM: install extensions into the "SSH: <host>" side.
 
-Override locations with `AGENT_SECRETS_DIR` and `AGENT_WORK_DIR`.
+Override locations with `AGENT_SECRETS_DIR` and `AGENT_FACTORY_DIR`.
 
 ## 4. Install OpenCode v2
 
