@@ -26,7 +26,6 @@ echo "Build system: $build_system"
 version opencode --version
 version git --version
 version clangd --version
-version ccache --version
 case "$build_system" in
     cmake) version cmake --version ;;
     make) version make --version; version bear --version ;;
