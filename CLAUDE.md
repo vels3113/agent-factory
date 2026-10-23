@@ -16,7 +16,7 @@ Planning documents and setup scripts for an AI-agent workflow (OpenCode + OpenRo
 - Settled decisions in the decision log are reopened only with a reason. Keep later edits consistent with it: provider-neutral harness (OpenCode, not Claude Code; no Anthropic models by default), agents on the VM, the LLM never waits on or polls Jenkins, and deterministic scripts handle Git, CI, retries and budget.
 - When a fact in `solution.md` turns out to be wrong (for example, OpenCode config details), record it under "Corrections to the plan" in `setup-guide.md` or fix it in `solution.md`. Don't let the two documents contradict each other.
 - OpenCode facts in the plan were checked against **v1** docs (https://opencode.ai/docs/). v2 (`@opencode/cli`) has a different, unverified config format. Don't mix the two.
-- Open questions that are still unknown (build system CMake vs. Make, Git server, VM resources, whether VS Code runs on the VM or through Remote-SSH) are answered by `bootstrap/03-vm-facts.sh` output. Don't assume them.
+- Open questions that are still unknown (build system CMake vs. Make, Git server, VM resources) are answered by `bootstrap/03-vm-facts.sh` output. Don't assume them. VS Code runs locally and connects to the VM through Remote-SSH.
 
 ## Script conventions
 

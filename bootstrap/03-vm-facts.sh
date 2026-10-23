@@ -44,4 +44,3 @@ version() { printf '%-8s ' "$1"; if command -v "$1" >/dev/null; then "$@" 2>&1 |
 
 echo
 echo "Saved to $out"
-echo "Also note: does VS Code run on the VM directly, or locally with Remote-SSH?"

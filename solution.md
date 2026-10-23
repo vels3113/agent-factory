@@ -26,6 +26,7 @@ Split software engineering work across AI agents, keeping API costs low while ma
 | Models | Provider-neutral; no Anthropic models by default. |
 | Budget | $10 trial top-up to compare with the previous tool; no $100+ upfront commitment. |
 | Baseline | A small subscription-based provider with a proprietary model, used semi-autonomously through a VS Code extension. |
+| Editor | VS Code runs locally and connects to the VM with Remote-SSH; OpenCode, clangd and extensions run on the VM. |
 | Language | C++, C, flex (`.l`), Python, Bash. Build system not yet stated (CMake or Make). |
 
 ## 3. Decision log

@@ -31,7 +31,7 @@ Reports build system, Git server, prerequisites, CPU/RAM and disk; saves to `~/a
 bootstrap/03-vm-facts.sh /path/to/project-repo
 ```
 
-Also note: does VS Code run on the VM directly, or locally with Remote-SSH?
+VS Code runs locally and connects to the VM with Remote-SSH. OpenCode, clangd and the VS Code extensions therefore run on the VM: install extensions into the "SSH: <host>" side.
 
 Override locations with `AGENT_SECRETS_DIR` and `AGENT_WORK_DIR`.
 
