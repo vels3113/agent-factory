@@ -12,6 +12,12 @@
   // Kept out of the upward AGENTS.md search path, so it loads exactly once.
   "instructions": ["TODO_INSTRUCTIONS_PATH"],
 
+  // Worktrees go to <project>/worktrees/<task-id> (relative to main/). OpenCode
+  // creates them on a detached HEAD; the project start command
+  // (scripts/agent-worktree-setup.sh, registered by bootstrap/08-task-workflow.sh)
+  // puts them on branch agent/<task-id>.
+  "worktree": { "directory": "../worktrees" },
+
   // Rules apply in order; the last match wins.
   "permissions": [
     { "action": "edit", "resource": "*", "effect": "ask" },
@@ -23,10 +29,16 @@
     { "action": "shell", "resource": "git log *", "effect": "allow" },
     { "action": "shell", "resource": "git show *", "effect": "allow" },
     { "action": "shell", "resource": "agent-check.sh *", "effect": "allow" },
+    { "action": "shell", "resource": "agent-task.sh new *", "effect": "allow" },
+    { "action": "edit", "resource": "*.agent/report.md", "effect": "allow" },
 
     // Agents never push or touch remotes; the developer or orchestrator does.
     { "action": "shell", "resource": "git push *", "effect": "deny" },
     { "action": "shell", "resource": "git remote *", "effect": "deny" },
+    // Worktrees and task state go through OpenCode's worktree tools and the scripts.
+    { "action": "shell", "resource": "git worktree *", "effect": "deny" },
+    { "action": "shell", "resource": "agent-task.sh start *", "effect": "deny" },
+    { "action": "shell", "resource": "agent-task.sh done *", "effect": "deny" },
 
     // Generated files and build output: edit the sources (.l, not the lexer .c).
     // TODO: replace with the real paths from AGENTS.md (filled by /init).

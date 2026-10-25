@@ -24,3 +24,10 @@ Instructions for AI agents working in this repository. Permissions are enforced 
 - Never push, and never query or wait for Jenkins. CI runs after you finish.
 - Keep changes within the task's scope. Commit when `agent-check.sh` passes, then stop.
 - If you are blocked or the task is unclear, say so and stop instead of guessing.
+
+## Tasks and reports
+
+- Each task has its own worktree, named after the task ID (`TASK-<n>` from Taiga, `VM-<n>` local), on branch `agent/<task-id>`. Your task ID is the name of your working directory.
+- To start another task from a session, create the worktree with `worktree_create` using the task ID as its name, then `session_move` into it. Never create worktrees or branches with `git` directly.
+- A bug outside your task's scope: don't fix it. Run `agent-task.sh new "<one-line title>" --parent <your task ID>` and name the new ID in your report.
+- Before you stop, write `.agent/report.md` in your worktree: what you changed, which checks ran and their result, what is left open, and new task IDs. Scripts archive it; it is never committed.

@@ -38,6 +38,8 @@ These decisions were settled in the design discussion; reopen only with a reason
 | Provider-neutral harness (OpenCode) | User requires provider neutrality; keeps models swappable | Vendor-specific harnesses (e.g. Claude Code) |
 | OpenCode v2, pinned (2.1.3) | Current major version (stable on npm); avoids a v1-to-v2 config migration later | OpenCode v1 (the plan was first checked against v1 docs) |
 | `AGENTS.md` and OpenCode config kept outside the project repo, in a parent folder named after the project | The team repo stays unchanged (other team members are out of scope); OpenCode finds project config in parent directories, so one copy serves the repo and every worktree, scoped to this project | Committing them to the project repo; global OpenCode config (applies to every project) |
+| Task worktrees created through OpenCode's worktree API; a project start command (`agent-worktree-setup.sh`) sets branch `agent/<task-id>` and the journal entry | One code path for the user, scripts and agents; OpenCode tracks the worktrees and agents can `session_move` into them. OpenCode 2.1.3 creates worktrees on a detached HEAD, so branch naming lives in the hook (checked in the binary and by a test, not in the docs) | Plain `git worktree add` in scripts (agent-created worktrees would skip the rules); a TypeScript worktree-strategy plugin |
+| Agent task journal separate from Taiga; IDs `TASK-<n>` (Taiga) and `VM-<n>` (local) | CI fixes and bugs found during development don't go through Taiga | Taiga as the only task source |
 | Agents run on the dev VM | Git and Jenkins are internal; the VM runs 24/7 | Cloud-hosted background agents |
 | Split agents by task difficulty, not by workflow | Cost savings come from model routing; workflow data does not exist yet | Workflow-specific agents from day 1 |
 | OpenRouter for billing in the trial | One $10 top-up covers all providers; per-key limits | Direct provider accounts, LiteLLM gateway (deferred to Phase 2) |
@@ -154,7 +156,7 @@ Build time, CPU and disk space on the VM are an open problem: there is no known 
 
 | Script | Purpose |
 | --- | --- |
-| `agent-task.sh` | Task lifecycle: pre-flight, isolation, agent run, push, Jenkins polling, repair, ledger entry, limits |
+| `agent-task.sh` | Task lifecycle. Done (interactive): `start`/`new`/`done`/`list`, worktree via OpenCode, journal, report archive. To do (background): pre-flight, agent run, push, Jenkins polling, repair, ledger entry, limits |
 | `agent-check.sh` | Incremental build of the affected target + targeted tests; bounded output (errors and failing tests) |
 | `jenkins-status.sh` | Build status, commit SHA, failed stage, bounded error excerpt |
 
