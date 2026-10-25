@@ -29,6 +29,7 @@ bootstrap/02-init-ledger.sh
 
 ```text
 ~/<project>/
+├── .vscode/settings.json     with --vscode: Source Control finds main/ and worktrees/*
 ├── opencode.jsonc            agents, permissions, "instructions" → instructions/AGENTS.md
 ├── instructions/AGENTS.md    outside the upward AGENTS.md search, so it loads exactly once
 ├── main/                     the repo
@@ -36,11 +37,12 @@ bootstrap/02-init-ledger.sh
 ```
 
 ```bash
-bootstrap/03-project-layout.sh <project> /path/to/project-repo   # or a Git URL to clone
+bootstrap/03-project-layout.sh --vscode <project> /path/to/project-repo   # or a Git URL to clone
 ```
 
 - Asks before moving an existing clone to `~/<project>/main` (then runs `git worktree repair`). Reopen VS Code and terminals at the new path.
 - Creates `instructions/AGENTS.md` from [templates/AGENTS.md](templates/AGENTS.md) (step 7 fills it), and `opencode.jsonc` from [templates/opencode.jsonc](templates/opencode.jsonc) with the absolute `instructions` path (https://opencode.ai/v2/docs/instructions/). Never overwrites either file.
+- `--vscode`: creates `~/<project>/.vscode/settings.json` with `git.repositoryScanMaxDepth: 2`, so VS Code opened on `~/<project>` shows `main/` and every worktree in Source Control. Run it again with `--vscode <project>` (no repo argument) to add this to an existing layout.
 - Parent folder location: `AGENT_PROJECTS_DIR` (default `~`).
 
 ## 4. VM fact check

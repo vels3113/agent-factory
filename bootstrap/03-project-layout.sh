@@ -2,15 +2,32 @@
 # Set up the project layout: a parent folder named after the project holds the
 # repo (main/), the task worktrees (worktrees/), and the OpenCode config and
 # AGENTS.md that every checkout under it loads. Nothing is committed to the repo.
-# Usage: 03-project-layout.sh <project-name> <repo-path-or-git-url>
+# Usage: 03-project-layout.sh [--vscode] <project-name> [repo-path-or-git-url]
+#   The repo argument is needed only while <project>/main does not exist yet.
+#   --vscode  also create <project>/.vscode/settings.json so VS Code, opened on
+#             <project>, shows main/ and every worktree in Source Control.
 set -euo pipefail
 
-name="${1:?Usage: $0 <project-name> <repo-path-or-git-url>}"
-source_repo="${2:?Usage: $0 <project-name> <repo-path-or-git-url>}"
+usage="Usage: $0 [--vscode] <project-name> [repo-path-or-git-url]"
+vscode=false
+args=()
+for arg in "$@"; do
+    case "$arg" in
+        --vscode) vscode=true ;;
+        -*) echo "$usage" >&2; exit 1 ;;
+        *) args+=("$arg") ;;
+    esac
+done
+name="${args[0]:?$usage}"
+source_repo="${args[1]:-}"
 templates="$(cd "$(dirname "$0")/../templates" && pwd)"
 parent="${AGENT_PROJECTS_DIR:-$HOME}/$name"
 main="$parent/main"
 
+if [[ -z "$source_repo" ]] && ! git -C "$main" rev-parse --git-dir >/dev/null 2>&1; then
+    echo "No repo at $main yet; pass a repo path or Git URL. $usage" >&2
+    exit 1
+fi
 mkdir -p "$parent/worktrees" "$parent/instructions"
 
 # Main checkout: reuse it, move an existing clone into place, or clone a URL.
@@ -49,10 +66,30 @@ else
     echo "Created $config."
 fi
 
+# VS Code opened on <project>: detect main/ (depth 1) and worktrees/<id> (depth 2).
+if $vscode; then
+    settings="$parent/.vscode/settings.json"
+    if [[ ! -e "$settings" ]]; then
+        mkdir -p "$parent/.vscode"
+        cat > "$settings" <<'JSON'
+{
+  "git.autoRepositoryDetection": true,
+  "git.repositoryScanMaxDepth": 2
+}
+JSON
+        echo "Created $settings."
+    elif grep -q '"git.repositoryScanMaxDepth"' "$settings"; then
+        echo "Kept existing $settings."
+    else
+        echo "WARNING: $settings exists; add \"git.repositoryScanMaxDepth\": 2 to it by hand." >&2
+    fi
+fi
+
 echo
 echo "Layout:"
 echo "  $parent/opencode.jsonc"
 echo "  $parent/instructions/AGENTS.md"
 echo "  $parent/main/            (repo)"
 echo "  $parent/worktrees/       (task worktrees)"
+$vscode && echo "  $parent/.vscode/settings.json  (open $parent in VS Code)"
 echo "Next: bootstrap/04-vm-facts.sh $parent"
