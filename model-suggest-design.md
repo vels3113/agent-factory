@@ -1,6 +1,6 @@
 # Design: `model-suggest.sh`, model suggestions per agent
 
-Status: agreed design, not built. Phase 1 scope; deferred parts are listed at the end with the reason for each.
+Status: built (`scripts/model-suggest.sh`, `scripts/model_suggest.py`, `tests/model-suggest.sh`). Phase 1 scope; deferred parts are listed at the end with the reason for each.
 
 ## Purpose
 
@@ -42,7 +42,7 @@ Without the router, alias and batch filters, the cheapest entries in the catalog
 
 ## Ranking
 
-1. **Quality floor per tier:** `intelligence_index` >= `MODEL_SUGGEST_FLOOR_MAIN` or `MODEL_SUGGEST_FLOOR_CHEAP`. This index has the best coverage (233 of 354 candidates on 2026-10-25). `coding_index` (141) and `agentic_index` (107) are too sparse for a floor (current cheap candidates lack them) and are shown only.
+1. **Quality floor per tier:** `intelligence_index` >= `MODEL_SUGGEST_FLOOR_MAIN` or `MODEL_SUGGEST_FLOOR_CHEAP`, either a number or a percentile of the rated paid candidates (`p90`), so the floor follows the market and survives a rescaled index. With the catalog of 2026-10-25, `p75` (33.6) put cheap models at the top of the main tier, the same as the cheap tier; `p90` (43.6) gives a distinct main tier. This index has the best coverage (233 of 354 candidates on 2026-10-25). `coding_index` (141) and `agentic_index` (107) are too sparse for a floor (current cheap candidates lack them) and are shown only.
 2. **Order:** estimated cost of one reference task, ascending: the shared token mix `MODEL_SUGGEST_MIX` times the model's prices. With `overrides`, use the highest price of each kind (the weekday peak), so time-of-day discounts never make a model look cheaper than it is. A missing cache-read price counts as the full input price.
 3. **Unrated:** models without `intelligence_index` are not dropped (new models often have none yet); the cheapest few go to a separate "unrated" line.
 
@@ -73,9 +73,9 @@ Untested candidates in the top 3: smoke-test before use:
   AGENT_TEST_MODEL=openrouter/<id> tests/run.sh --model
 ```
 
-**Paste block:** per tier, the best-ranked model with at least one accepted ledger row; if none has one, rank 1 with a `// untested` comment. Format `openrouter/<vendor>/<model>`; `#<variant>` is left to the user.
+**Paste block:** per tier, the best-ranked model in the shown top N with at least one accepted ledger row (so a tested main-tier model is not suggested for the cheap tier); if none has one, rank 1, marked `// untested` (no ledger rows) or `// no accepted task yet`. Format `openrouter/<vendor>/<model>`; `#<variant>` is left to the user.
 
-**Current model:** a model in `opencode.jsonc` that is missing from the catalog is shown as "not in catalog (removed or renamed)".
+**Current model:** each configured `agents.<name>.model`, as written, with its rank, estimate and ledger figures, or why it is not ranked: not in catalog (removed or renamed), filtered (with the filter), below the floor, or not an OpenRouter model.
 
 ## Settings
 
@@ -84,10 +84,11 @@ Env vars with defaults; no config file.
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `MODEL_SUGGEST_MIX` | `2000000,300000,0,50000` | Reference task tokens: cache read, input, cache write, output. A guess until real token splits exist. |
-| `MODEL_SUGGEST_FLOOR_MAIN` | set at implementation from the index distribution | `intelligence_index` floor, main tier |
-| `MODEL_SUGGEST_FLOOR_CHEAP` | as above | Floor, cheap tier |
+| `MODEL_SUGGEST_FLOOR_MAIN` | `p90` | `intelligence_index` floor, main tier: a number, or `p<N>` for a percentile |
+| `MODEL_SUGGEST_FLOOR_CHEAP` | `p50` | Floor, cheap tier |
 | `MODEL_SUGGEST_TOP` | `5` | Rows per tier |
 | `MODEL_SUGGEST_MIN_CTX` | `128000` | Minimum context length |
+| `MODEL_SUGGEST_CATALOG` | (API) | Read the catalog from this file; used by the test |
 
 ## Errors
 

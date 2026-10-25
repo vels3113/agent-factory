@@ -105,7 +105,7 @@ OpenCode's built-in `/init` ("guided AGENTS.md setup"; not yet in the v2 docs) r
 7. Fill these placeholders in `~/<project>/opencode.jsonc`:
    - `TODO_BUILD_DIR`: the presets' `binaryDir` pattern from `AGENTS.md`, for example `*/build/*` for `${sourceDir}/build/${presetName}`. For Make, the build output directories it names.
    - The generated-file patterns: from `AGENTS.md`.
-   - Model lines: commented out until models are chosen in a separate discussion; until then agents use the model picked with `/models`.
+   - Model lines: commented out until models are chosen (step 10); until then agents use the model picked with `/models`.
 
 ## 8. Task workflow
 
@@ -121,7 +121,7 @@ One-time setup (run after step 5; the base branch is where task branches start):
 bootstrap/08-task-workflow.sh ~/<project> lemon
 ```
 
-- Writes `BASE_BRANCH` to `~/<project>/agent.env`; adds `.agent/` to `main/.git/info/exclude`; links `agent-task.sh` and `agent-check.sh` into `~/.local/bin`.
+- Writes `BASE_BRANCH` to `~/<project>/agent.env`; adds `.agent/` to `main/.git/info/exclude`; links `agent-task.sh`, `agent-check.sh` and `model-suggest.sh` (step 10) into `~/.local/bin`.
 - Registers [scripts/agent-worktree-setup.sh](scripts/agent-worktree-setup.sh) as OpenCode's project start command. OpenCode runs it in every worktree it creates, whether you, the script or an agent asked for it. It moves the worktree from a detached HEAD to `agent/<task-id>` (from `origin/<base>`, no upstream) and rejects names that are not task IDs or unallocated `VM-<n>` IDs.
 - A layout created before this step needs `"worktree": { "directory": "../worktrees" }` in `~/<project>/opencode.jsonc` (see [templates/opencode.jsonc](templates/opencode.jsonc)); the script warns if it is missing.
 
@@ -195,12 +195,33 @@ Wrapper settings, overridable in the profile (defaults in [scripts/agent-check.s
 - A new CMake profile adds ccache as compiler launcher when ccache is installed; a new Make profile puts its compiler symlinks first on `PATH`. If the build files already use ccache, the OpenCode prompt removes these lines.
 - A proposal for a result cache, deferred until `checks.tsv` shows repeated checks of the same files: [check-result-cache.md](check-result-cache.md).
 
+## 10. Model suggestions
+
+`model-suggest.sh` ranks OpenRouter models per tier (main: `build`, `plan`; cheap: `explore`, `ci-fix`) from the OpenRouter catalog and the ledger, and prints `agents.<name>.model` lines to paste into `~/<project>/opencode.jsonc`. It never edits the config. Rerun it when choosing models, when the model market changes, and as ledger rows come in. Design and reasons: [model-suggest-design.md](model-suggest-design.md).
+
+```bash
+model-suggest.sh
+```
+
+- Needs the ledger (step 2) and internet access; reads the current model lines from the project config through `vm.env` (step 4). No API key: the catalog is public.
+- Filters: tool calling, context of at least 128k, no expiry within 30 days; no OpenRouter routers, aliases or batch variants; free models only as extra rows for `explore`. Provider terms (retention, training) are not checked.
+- Ranking: models above the tier's `intelligence_index` floor (default: top 10% of rated models for main, top half for cheap), cheapest first by the estimated cost of a reference task at peak prices. Models without an index are listed on a separate "unrated" line.
+- Ledger column: accepted/all tasks and cost per accepted task for each model; "untested" when the ledger has no row for it. The paste block takes the best-ranked model with an accepted task, otherwise rank 1 marked `// untested` or `// no accepted task yet`.
+- "current <agent>" lines show each configured model's rank, or why it is not ranked (not in the catalog, filtered, below the floor).
+- Settings (env vars, defaults in the header of [scripts/model-suggest.sh](scripts/model-suggest.sh)): `MODEL_SUGGEST_MIX` (reference task tokens), `MODEL_SUGGEST_FLOOR_MAIN` / `MODEL_SUGGEST_FLOOR_CHEAP` (a number or `p<N>`), `MODEL_SUGGEST_TOP`, `MODEL_SUGGEST_MIN_CTX`. For example, a lower main floor: `MODEL_SUGGEST_FLOOR_MAIN=p75 model-suggest.sh`.
+
+Using a suggestion:
+
+1. Smoke-test an untested model before you put it in the config. The printed `AGENT_TEST_MODEL=openrouter/<id> tests/run.sh --model` does not work yet for OpenRouter models, because the test sandbox has no OpenRouter key. Until it does, try the model by hand on one small task: `/models` in `opencode`, then one edit, `agent-check.sh` and fix round.
+2. Paste the lines into the `agents` section of `~/<project>/opencode.jsonc`, replacing the commented-out model lines; add `#<variant>` for a reasoning effort (https://opencode.ai/v2/docs/models/#variants). Anthropic models appear in the list; the plan excludes them by default (solution.md section 3).
+3. Check that the "current" lines now show the chosen models: `model-suggest.sh | grep current`.
+
 ## Tests
 
 Each suite runs in a throwaway sandbox (own HOME, OpenCode data and service port), so it never touches the real setup:
 
 ```bash
-tests/run.sh            # OpenCode behavior + task workflow, no model (under a minute; the first run downloads OpenCode)
+tests/run.sh            # OpenCode behavior + task workflow + model suggestions, no model (under a minute; the first run downloads OpenCode)
 tests/run.sh --model    # also agent behavior with a free model (AGENT_TEST_MODEL to change it)
 OPENCODE_VERSION=2.x.y tests/run.sh --model   # before moving the pinned version
 ```

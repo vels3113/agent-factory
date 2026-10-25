@@ -6,7 +6,7 @@
 set -uo pipefail
 
 dir="$(dirname "$0")"
-suites=(opencode-behavior.sh task-workflow.sh)
+suites=(opencode-behavior.sh task-workflow.sh model-suggest.sh)
 [[ "${1:-}" == --model ]] && suites+=(agent-model.sh)
 
 failed=()
