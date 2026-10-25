@@ -13,7 +13,7 @@
 
 ## 2. Task ledger
 
-Creates `~/.agent-factory/ledger.csv` with the header row; never overwrites an existing ledger:
+Creates `~/.agent-factory/ledger.csv` with the header row; never overwrites an existing ledger. Rows are written by `agent-task.sh done` (step 8):
 
 ```bash
 bootstrap/02-init-ledger.sh
@@ -106,21 +106,42 @@ OpenCode's built-in `/init` ("guided AGENTS.md setup"; not yet in the v2 docs) r
    - `TODO_BUILD_DIR` and the generated-file patterns: from `AGENTS.md`.
    - Model lines: commented out until models are chosen in a separate discussion; until then agents use the model picked with `/models`.
 
-## 8. Task worktrees
+## 8. Task workflow
 
-One worktree and branch per task, under `worktrees/` (the background loop will automate this in `agent-task.sh`). By hand:
+Every task gets its own worktree `worktrees/<task-id>` on branch `agent/<task-id>`, and an entry in the agent task journal. Task IDs:
+
+- `TASK-<n>`: Taiga tasks.
+- `VM-<n>`: local tasks that don't go through Taiga (bugs found during development, side tasks), numbered by `agent-task.sh new`.
+- CI fixes are not new tasks; they are further attempts on the task's own branch.
+
+One-time setup (run after step 5; the base branch is where task branches start):
 
 ```bash
-cd ~/<project>/main
-git fetch origin
-git worktree add ../worktrees/<task-id> -b agent/<task-id> origin/<base-branch>
-
-# after review
-git worktree remove ../worktrees/<task-id>
-git branch -D agent/<task-id>
+bootstrap/08-task-workflow.sh ~/<project> lemon
 ```
 
-`git worktree list` shows all of them. Build directories inside a worktree are removed with it.
+- Writes `BASE_BRANCH` to `~/<project>/agent.env`; adds `.agent/` to `main/.git/info/exclude`; links `agent-task.sh` into `~/.local/bin`.
+- Registers [scripts/agent-worktree-setup.sh](scripts/agent-worktree-setup.sh) as OpenCode's project start command. OpenCode runs it in every worktree it creates, whether you, the script or an agent asked for it. It moves the worktree from a detached HEAD to `agent/<task-id>` (from `origin/<base>`, no upstream) and rejects names that are not task IDs or unallocated `VM-<n>` IDs.
+- A layout created before this step needs `"worktree": { "directory": "../worktrees" }` in `~/<project>/opencode.jsonc` (see [templates/opencode.jsonc](templates/opencode.jsonc)); the script warns if it is missing.
+
+Daily use:
+
+```bash
+agent-task.sh start TASK-1234 "Short title"        # creates the worktree, opens OpenCode in it; reruns reopen it
+agent-task.sh start --new "Short title" [--parent TASK-1234]   # local task: allocates VM-<n>, then starts it
+agent-task.sh new "Short title" [--parent TASK-1234]           # allocate VM-<n> only (agents use this)
+agent-task.sh done TASK-1234                        # after review: removes the worktree and the local branch
+agent-task.sh list                                  # journal index
+```
+
+- `done` refuses when the worktree has uncommitted changes and keeps the branch if it has commits on no remote.
+- `done` writes the task's row to the ledger (step 2). It asks for origin, your hands-on minutes, outcome and notes; it fills model, provider, session IDs, cost, agent minutes (prompt-to-idle time) and `agent-check.sh` rounds from the OpenCode sessions that ran in the worktree, and disk use from the worktree. Jenkins rounds and build minutes stay empty until those scripts exist. The cost is OpenCode's figure; the OpenRouter Activity page is authoritative.
+- Agents can start another task themselves with OpenCode's `worktree_create` and `session_move` tools (see [templates/AGENTS.md](templates/AGENTS.md)); the start command applies the same rules.
+
+Journal and reports (under `~/.agent-factory/`):
+
+- `journal/index.md`: one row per task (source Taiga/local, parent, title, status). `journal/<task-id>.md`: append-only events, written only by scripts.
+- Agents write `.agent/report.md` in their worktree. When the session ends (and on `done`), the script moves it to `reports/<task-id>/<timestamp>-<label>.md` and links it from the task's journal.
 
 ## OpenCode v2 documentation
 

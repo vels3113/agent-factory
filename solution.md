@@ -168,7 +168,7 @@ Phase 1 uses existing dashboards plus a lightweight ledger; no Grafana, Langfuse
 
 - **OpenRouter Activity page:** cost by key, model and provider; tokens and cache behavior.
 - **`opencode stats`:** token usage and cost per session and model.
-- **Task ledger:** CSV, filled by hand in Phase 1a and written by `agent-task.sh` from Phase 1b.
+- **Task ledger:** CSV, one row per task written by `agent-task.sh done`: session data (model, cost, agent time, check rounds) from OpenCode, human minutes and outcome asked at the prompt. Jenkins rounds and build time are added with the background loop (Phase 1b).
 
 **Budget controls:**
 
