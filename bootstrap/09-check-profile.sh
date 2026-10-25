@@ -53,8 +53,11 @@ new_profile() {
 #   check_configure, check_build          run in the worktree for one preset
 #   build_dir <output>                    optional: prints the preset's build directory, given the
 #                                         output of check_configure; empty output keeps the last one
-#   CHECK_SUITES, CHECK_DEFAULT_SUITE     test runs; test_<suite> [<test>...] runs the named tests,
-#                                         or the whole suite without names; list_<suite> lists tests
+#   test_<suite> [<test>...]              a test suite: runs the named tests, or the whole suite
+#                                         without names; list_<suite> lists its tests. Every
+#                                         test_* function is a suite, so helpers use other names
+#   CHECK_DEFAULT_SUITE                   the suite for test names given without --suite;
+#                                         needed only with more than one suite
 #   CHECK_PARSER[build|<suite>]           output parser: compiler, ctest, pytest or generic
 # The functions run in a separate bash in the worktree and see only these
 # variables: PRESET, BUILD_DIR (absolute; empty before the first build_dir
@@ -87,9 +90,8 @@ check_configure() {
 build_dir() { sed -n 's/^-- Build files have been written to: //p' "$1" | tail -n 1; }
 check_build() { cmake --build "$BUILD_DIR" --parallel "$JOBS" -- -l "$LOAD"; }
 
-# Test runs CI does. TODO: one test_<suite> (and list_<suite>) per CI test run.
-CHECK_SUITES=(unit)
-CHECK_DEFAULT_SUITE=unit
+# Test runs CI does. TODO: one test_<suite> (and list_<suite>) per CI test run;
+# with more than one, CHECK_DEFAULT_SUITE names the default.
 declare -A CHECK_PARSER=([build]=compiler [unit]=ctest)
 test_unit() {
     local only=()
@@ -116,9 +118,8 @@ check_configure() { :; }
 build_dir() { echo .; }
 check_build() { with_ccache; make -j"$JOBS" -l "$LOAD"; }
 
-# Test runs CI does. TODO: one test_<suite> (and list_<suite>) per CI test run.
-CHECK_SUITES=(check)
-CHECK_DEFAULT_SUITE=check
+# Test runs CI does. TODO: one test_<suite> (and list_<suite>) per CI test run;
+# with more than one, CHECK_DEFAULT_SUITE names the default.
 declare -A CHECK_PARSER=([build]=compiler [check]=generic)
 test_check() { with_ccache; make -j"$JOBS" -l "$LOAD" "${@:-check}"; }
 EOF

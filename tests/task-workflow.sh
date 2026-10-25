@@ -94,7 +94,7 @@ echo 0 > "$stub/py.rc"
 cat > "$P/agent-check.conf" <<EOF
 CHECK_PRESETS=(dev rel)
 CHECK_DEFAULT_PRESET=dev
-CHECK_SUITES=(unit py)
+CHECK_DEFAULT_SUITE=unit
 declare -A CHECK_PARSER=([unit]=ctest [py]=pytest)
 CHECK_BUILD_PATHS=('*.c')
 CHECK_TIMEOUT_MIN=\${STUB_TIMEOUT_MIN:-1}
@@ -137,6 +137,11 @@ check "unknown preset: lists the presets" grep -q 'presets: dev rel' "$T/ac.out"
 check_eq "--list" 0 "$(ac "$wt3" --list)"
 check "--list: presets, default marked" grep -qx '  dev \*' "$T/ac.out"
 check "--list: suites and their tests" bash -c "grep -qx '  unit \*' '$T/ac.out' && grep -qx '    parse_bad' '$T/ac.out'"
+check_eq "unknown suite: setup error" 3 "$(ac "$wt3" --suite nope)"
+check "unknown suite: lists the test_ functions" grep -q 'suites: py unit' "$T/ac.out"
+sed -i '/^CHECK_DEFAULT_SUITE=/d' "$P/agent-check.conf"
+check_eq "two suites, no CHECK_DEFAULT_SUITE: setup error" 3 "$(ac "$wt3" --list)"
+echo 'CHECK_DEFAULT_SUITE=unit' >> "$P/agent-check.conf"
 
 {
     echo "In file included from src/a.h:2:"
@@ -232,6 +237,8 @@ sed -e 's/^CHECK_PRESETS=(TODO)/CHECK_PRESETS=(dev outside)/' -e 's/^CHECK_DEFAU
 rm "$MAIN/agent-check.draft.conf"
 agent-task.sh start TASK-4 "Preset task" >/dev/null
 wt4="$P/worktrees/TASK-4"
+# The prebuild may start after the session ended: wait for its journal line.
+wait_for 10 grep -q "prebuild dev: " "$journal/TASK-4.md"
 wait_for 10 bash -c "! pgrep -f 'agent-check[.]sh --prebuild'"
 echo '{}' > "$wt4/CMakePresets.json"
 echo 'int main(void) { return 0; }' > "$wt4/main.c"

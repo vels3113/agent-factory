@@ -68,23 +68,30 @@ CHECK_PREBUILD_TIMEOUT_MIN=120
 CHECK_WAIT_MIN=60           # waiting for a build slot or another check of the same preset
 CHECK_PRESETS=()
 CHECK_DEFAULT_PRESET=""
-CHECK_SUITES=()
-CHECK_DEFAULT_SUITE=""
+CHECK_DEFAULT_SUITE=""     # needed when the profile has more than one suite
 CHECK_BUILD_PATHS=()        # empty: every change needs a build
 declare -A CHECK_PARSER=()
 source "$profile"
 ((${#CHECK_PRESETS[@]})) || setup_error "no CHECK_PRESETS in $profile."
 declare -F check_build >/dev/null || setup_error "no check_build function in $profile."
 declare -F check_configure >/dev/null || check_configure() { :; }
+# Test suites: the profile's test_<suite> functions.
+mapfile -t suites < <(declare -F | awk '$3 ~ /^test_./ { print substr($3, 6) }')
+if [[ -n "$CHECK_DEFAULT_SUITE" ]]; then
+    known "$CHECK_DEFAULT_SUITE" "${suites[@]}" || setup_error "CHECK_DEFAULT_SUITE=$CHECK_DEFAULT_SUITE has no test_$CHECK_DEFAULT_SUITE function in $profile."
+elif ((${#suites[@]} == 1)); then
+    CHECK_DEFAULT_SUITE="${suites[0]}"
+elif ((${#suites[@]} > 1)); then
+    setup_error "no CHECK_DEFAULT_SUITE in $profile; suites: ${suites[*]}."
+fi
 
 ((${#presets[@]})) || presets=("${CHECK_DEFAULT_PRESET:-${CHECK_PRESETS[0]}}")
 for p in "${presets[@]}"; do
     known "$p" "${CHECK_PRESETS[@]}" || setup_error "unknown preset '$p'; presets: ${CHECK_PRESETS[*]}."
 done
-[[ ${#tests[@]} -gt 0 && -z "$suite" ]] && suite="${CHECK_DEFAULT_SUITE:-${CHECK_SUITES[0]:-}}"
+[[ ${#tests[@]} -gt 0 && -z "$suite" ]] && suite="$CHECK_DEFAULT_SUITE"
 if [[ -n "$suite" || ${#tests[@]} -gt 0 ]]; then
-    known "$suite" "${CHECK_SUITES[@]}" || setup_error "unknown test suite '$suite'; suites: ${CHECK_SUITES[*]:-none}."
-    declare -F "test_$suite" >/dev/null || setup_error "no test_$suite function in $profile."
+    known "$suite" "${suites[@]}" || setup_error "unknown test suite '$suite'; suites: ${suites[*]:-none}."
 fi
 
 cpus="${CPU_COUNT:-$(nproc)}"
@@ -110,8 +117,8 @@ if [[ "$mode" == list ]]; then
         echo "  $p$([[ "$p" == "$default" ]] && echo ' *')${d:+  (built in $d)}"
     done
     echo "Test suites (* default):"
-    for s in "${CHECK_SUITES[@]}"; do
-        echo "  $s$([[ "$s" == "${CHECK_DEFAULT_SUITE:-${CHECK_SUITES[0]}}" ]] && echo ' *')"
+    for s in "${suites[@]}"; do
+        echo "  $s$([[ "$s" == "$CHECK_DEFAULT_SUITE" ]] && echo ' *')"
         declare -F "list_$s" >/dev/null || continue
         d="$(dir_of "$default")"
         if [[ -z "$d" ]] && declare -F build_dir >/dev/null; then
