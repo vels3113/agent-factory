@@ -143,6 +143,16 @@ Journal and reports (under `~/.agent-factory/`):
 - `journal/index.md`: one row per task (source Taiga/local, parent, title, status). `journal/<task-id>.md`: append-only events, written only by scripts.
 - Agents write `.agent/report.md` in their worktree. When the session ends (and on `done`), the script moves it to `reports/<task-id>/<timestamp>-<label>.md` and links it from the task's journal.
 
+## Tests
+
+Each suite runs in a throwaway sandbox (own HOME, OpenCode data and service port), so it never touches the real setup:
+
+```bash
+tests/run.sh            # OpenCode behavior + task workflow, no model (under a minute; the first run downloads OpenCode)
+tests/run.sh --model    # also agent behavior with a free model (AGENT_TEST_MODEL to change it)
+OPENCODE_VERSION=2.x.y tests/run.sh --model   # before moving the pinned version
+```
+
 ## OpenCode v2 documentation
 
 - Config files and locations: https://opencode.ai/v2/docs/config/#locations

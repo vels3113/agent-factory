@@ -230,7 +230,7 @@ Add agents, models and infrastructure only when trial evidence justifies them.
 | Risk | Mitigation |
 | --- | --- |
 | Cheap models fail at tool calling in OpenCode | Smoke-test each model on one edit-build-fix loop before the trial |
-| OpenCode config/behavior changes between 2.x releases | Pin the version; disable auto-update |
+| OpenCode config/behavior changes between 2.x releases | Pin the version; disable auto-update; before moving the pin, run `OPENCODE_VERSION=<new> tests/run.sh --model` |
 | Long local builds outlast the prompt cache, so the next request is billed at full price | Pre-build worktrees; keep agent checks short |
 | Background builds slow interactive work | `nice`/`ionice`, lower `-j`, concurrency 1 |
 | Disk exhaustion from worktrees and build directories | Free-disk guard; cleanup; iterate on layout (section 8) |
