@@ -22,6 +22,7 @@ Instructions for AI agents working in this repository. Permissions are enforced 
 - Lexers: edit the flex sources (`.l`). Never edit the generated lexer `.c` files; the build regenerates them.
 - Never edit build output or generated files.
 - Never push, and never query or wait for Jenkins. CI runs after you finish.
+- Never change the Git identity or Git config (no `git config`, no `git -c user.*`). If a commit fails, report the error and stop.
 - Keep changes within the task's scope. Commit when `agent-check.sh` passes, then stop.
 - If you are blocked or the task is unclear, say so and stop instead of guessing.
 
