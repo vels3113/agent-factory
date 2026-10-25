@@ -14,7 +14,11 @@ Instructions for AI agents working in this repository. Permissions are enforced 
 
 <!-- TODO: build system, build directory, how to build one target, how to run one test. -->
 
-- Check your change with `agent-check.sh` only. It builds the affected target and runs targeted tests with short output. It is on `PATH`: run it as `agent-check.sh`, not `./agent-check.sh`.
+<!-- TODO: the CMake presets CI checks, and which preset fits which kind of change. -->
+
+- Check your change with `agent-check.sh` only: `agent-check.sh [--preset <name>] [<test>...]`. It builds incrementally and runs the tests you name, with short output (first errors, failing tests) and the path of the full log. It is on `PATH`: run it as `agent-check.sh`, not `./agent-check.sh`.
+- Run it as a background shell command (`background: true`). Don't edit files until its result arrives.
+- Exit codes: 0 passed, 1 build failed, 2 tests failed, 5 files changed during the check (run it again). 3 (setup error) or 4 (timed out, or no free build slot): report it and stop, don't change code to work around it.
 - Do not run a full build or the full test suite unless the task asks for it.
 
 ## Rules

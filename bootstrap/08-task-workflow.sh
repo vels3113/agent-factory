@@ -5,7 +5,7 @@
 #   - registers scripts/agent-worktree-setup.sh as OpenCode's project start
 #     command, run in every worktree OpenCode creates
 #   - main/.git/info/exclude: .agent/ (agent reports stay out of Git)
-#   - ~/.local/bin: links to agent-task.sh and agent-worktree-setup.sh
+#   - ~/.local/bin: links to agent-task.sh, agent-check.sh and agent-worktree-setup.sh
 #   - the agent task journal under ~/.agent-factory/journal
 # Usage: 08-task-workflow.sh <project-dir> <base-branch>
 set -euo pipefail
@@ -39,7 +39,7 @@ grep -qx '.agent/' "$exclude" 2>/dev/null || { echo '.agent/' >> "$exclude"; ech
 
 # Commands on PATH for you and the agents (Ubuntu adds ~/.local/bin to PATH at login).
 mkdir -p "$HOME/.local/bin"
-for s in agent-task.sh agent-worktree-setup.sh; do
+for s in agent-task.sh agent-check.sh agent-worktree-setup.sh; do
     link="$HOME/.local/bin/$s"
     if [[ -L "$link" && "$(readlink -f "$link")" == "$scripts/$s" ]]; then
         :

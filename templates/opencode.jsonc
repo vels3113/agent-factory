@@ -28,6 +28,7 @@
     { "action": "shell", "resource": "git diff *", "effect": "allow" },
     { "action": "shell", "resource": "git log *", "effect": "allow" },
     { "action": "shell", "resource": "git show *", "effect": "allow" },
+    { "action": "shell", "resource": "agent-check.sh", "effect": "allow" },
     { "action": "shell", "resource": "agent-check.sh *", "effect": "allow" },
     { "action": "shell", "resource": "agent-task.sh new *", "effect": "allow" },
     { "action": "edit", "resource": "*.agent/report.md", "effect": "allow" },
@@ -44,10 +45,17 @@
     // TODO: replace with the real paths from AGENTS.md (filled by /init), and add
     // a deny rule for every other generated-file pattern it names.
     { "action": "edit", "resource": "*lex.yy.c", "effect": "deny" },
+    // Build output: agent-check.sh builds each CMake preset in its binaryDir.
+    // TODO: the binaryDir pattern of the presets in CMakePresets.json, e.g.
+    // "*/build/*" for "${sourceDir}/build/${presetName}" (AGENTS.md names it).
     { "action": "edit", "resource": "TODO_BUILD_DIR/*", "effect": "deny" },
+    // agent-check.sh logs.
+    { "action": "edit", "resource": "*.agent/check/*", "effect": "deny" },
 
-    // Agents never edit their own config or instructions.
+    // Agents never edit their own config or instructions. agent.env defines
+    // the build commands agent-check.sh runs (background runs pass --auto).
     { "action": "edit", "resource": "*opencode.jsonc", "effect": "deny" },
+    { "action": "edit", "resource": "*agent.env", "effect": "deny" },
     { "action": "edit", "resource": "*instructions/AGENTS.md", "effect": "deny" },
   ],
 

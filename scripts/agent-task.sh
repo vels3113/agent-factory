@@ -9,7 +9,8 @@
 #                                                 the branch (kept if it has unpushed commits)
 #   agent-task.sh list                            print the journal index
 set -euo pipefail
-source "$(dirname "$(readlink -f "$0")")/agent-lib.sh"
+here="$(dirname "$(readlink -f "$0")")"
+source "$here/agent-lib.sh"
 
 usage() { sed -n '5,11p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 1; }
 
@@ -69,7 +70,13 @@ start_task() {
         [[ -d "$wt" ]] || { echo "Unexpected worktree location: $out" >&2; exit 1; }
     fi
     echo "Task $id: $wt (branch $(git -C "$wt" branch --show-current))"
+    # Prebuild while the agent starts working; stopped when the session ends.
+    # Own session (setsid), so pkill -s also reaches the build processes.
+    local prebuild
+    (cd "$wt" && exec setsid "$here/agent-check.sh" --prebuild) </dev/null >/dev/null 2>&1 &
+    prebuild=$!
     opencode "$wt" || true
+    pkill -TERM -s "$prebuild" 2>/dev/null || true
     archive_report "$id" "$wt" session
     log_event "$id" "session ended"
 }
@@ -96,6 +103,7 @@ done_task() {
         # Mode: interactive until the background loop passes its own.
         ledger_row "$main" "$wt" "$id" interactive "${origin:-new}" "$human" "$outcome" "$notes"
         log_event "$id" "ledger row: $outcome"
+        [[ -d "$wt" ]] && log_event "$id" "disk used: $(du -sk "$wt" | awk '{printf "%.2f", $1 / 1048576}') GB (worktree and build output)"
     fi
     if [[ -d "$wt" ]]; then
         archive_report "$id" "$wt" final

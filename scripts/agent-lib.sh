@@ -57,15 +57,21 @@ archive_report() {
     log_event "$1" "report: [$name](../reports/$1/$name)"
 }
 
+# Ledger columns, written as the header by bootstrap/02-init-ledger.sh. Only data
+# on the model's work; build times and disk use go to the task journal.
+ledger_header="task_id,date,mode,origin,model,provider,session_id,api_cost_usd,agent_minutes,human_minutes,local_check_rounds,local_check_failures,jenkins_rounds,outcome,notes"
+
 # ledger_row <main-checkout> <worktree> <id> <mode> <origin> <human-min> <outcome> <notes>:
-# append one row to ledger.csv (columns from bootstrap/02-init-ledger.sh). Model,
-# cost, sessions, agent minutes and agent-check.sh rounds come from the OpenCode
-# sessions that ran in the worktree; agent minutes count prompt-to-idle time only.
-# Jenkins rounds and build minutes stay empty until those scripts exist.
+# append one row to ledger.csv. Model, cost, sessions and agent minutes come from
+# the OpenCode sessions that ran in the worktree; agent minutes count
+# prompt-to-idle time minus the time spent in agent-check.sh. Check rounds and
+# failures (exit 1, 2 or 5) come from journal/<id>.checks.tsv, counting only the
+# checks OpenCode ran. Jenkins rounds stay empty until that script exists.
 ledger_row() {
-    local main="$1" wt="$2" ledger="$factory_dir/ledger.csv" disk="" sessions
+    local main="$1" wt="$2" ledger="$factory_dir/ledger.csv" sessions
     [[ -s "$ledger" ]] || { echo "No ledger at $ledger; run bootstrap/02-init-ledger.sh." >&2; return 1; }
-    [[ -d "$wt" ]] && disk="$(du -sk "$wt" | awk '{printf "%.2f", $1 / 1048576}')"
+    [[ "$(head -n 1 "$ledger")" == "$ledger_header" ]] \
+        || { echo "$ledger has older columns; move it aside and run bootstrap/02-init-ledger.sh." >&2; return 1; }
     sessions="$(mktemp -d)"
     (cd "$main" && opencode session list --standalone --format json -n 1000) > "$sessions/list.json"
     python3 -I -c '
@@ -76,10 +82,16 @@ for s in json.load(open(sys.argv[1])):
         (cd "$main" && opencode session export --standalone "$sid") > "$sessions/$sid.json"
     done
     rm -f "$sessions/list.json"
-    python3 -I - "$ledger" "$sessions" "$3" "$4" "$5" "$6" "$7" "$8" "$disk" <<'EOF'
-import csv, datetime, glob, json, sys
-ledger, sdir, task, mode, origin, human, outcome, notes, disk = sys.argv[1:]
-models, providers, ids, cost, busy_ms, checks = [], [], [], 0.0, 0, 0
+    python3 -I - "$ledger" "$sessions" "$journal_dir/$3.checks.tsv" "$3" "$4" "$5" "$6" "$7" "$8" <<'EOF'
+import csv, datetime, glob, json, os, sys
+ledger, sdir, tsv, task, mode, origin, human, outcome, notes = sys.argv[1:]
+checks = []  # (start ms, end ms, exit) of the checks OpenCode ran
+if os.path.exists(tsv):
+    for line in open(tsv):
+        f = line.rstrip("\n").split("\t")
+        if len(f) >= 6 and f[2] == "check" and f[5]:
+            checks.append((int(f[0]) * 1000, int(f[1]) * 1000, int(f[4])))
+models, providers, ids, cost, busy = [], [], [], 0.0, []
 for path in sorted(glob.glob(sdir + "/*.json")):
     d = json.load(open(path))
     info = d["info"]
@@ -92,18 +104,15 @@ for path in sorted(glob.glob(sdir + "/*.json")):
     for msg in d["messages"]:
         if msg["type"] == "user" and start is None: start = msg["time"]["created"]
         elif msg["type"] == "idle" and start is not None:
-            busy_ms += msg["time"]["created"] - start; start = None
-        for part in msg.get("content") or []:
-            st = part.get("state") or {}
-            # A round is a check that ran; 126/127 mean it never started.
-            if part.get("type") == "tool" and part.get("name") == "shell" and \
-               "agent-check.sh" in ((st.get("input") or {}).get("command") or "") and \
-               (st.get("metadata") or {}).get("exit") not in (126, 127):
-                checks += 1
+            busy.append((start, msg["time"]["created"])); start = None
+busy_ms = sum(e - s for s, e in busy)
+busy_ms -= sum(max(0, min(e, ce) - max(s, cs)) for s, e in busy for cs, ce, _ in checks)
+failures = sum(1 for c in checks if c[2] in (1, 2, 5))
 row = [task, datetime.date.today().isoformat(), mode, origin, "+".join(models), "+".join(providers),
-       " ".join(ids), f"{cost:.4f}", f"{busy_ms / 60000:.1f}", human, checks, "", "", disk, outcome, notes]
+       " ".join(ids), f"{cost:.4f}", f"{busy_ms / 60000:.1f}", human, len(checks), failures, "", outcome, notes]
 with open(ledger, "a", newline="") as f: csv.writer(f).writerow(row)
-print(f"Ledger: {len(ids)} session(s), ${cost:.4f}, {busy_ms / 60000:.1f} agent min, {checks} check round(s).")
+print(f"Ledger: {len(ids)} session(s), ${cost:.4f}, {busy_ms / 60000:.1f} agent min, "
+      f"{len(checks)} check round(s), {failures} failed.")
 EOF
     rm -rf "$sessions"
 }

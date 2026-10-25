@@ -97,13 +97,14 @@ OpenCode's built-in `/init` ("guided AGENTS.md setup"; not yet in the v2 docs) r
 4. Run, as one line:
 
    ```text
-   /init Keep the Rules section of the existing AGENTS.md unchanged. Fill the Codebase map and Build and test sections. Start from ~/.agent-factory/repo-overview.txt if it exists. This is a large C++/C/flex repo: name the build output directories, the generated lexer .c files and their .l sources, how to build one target, and how to run one test. Keep the codebase map under 20 lines.
+   /init Keep the Rules section of the existing AGENTS.md unchanged. Fill the Codebase map and Build and test sections. Start from ~/.agent-factory/repo-overview.txt if it exists. This is a large C++/C/flex repo: name the build output directories, the generated lexer .c files and their .l sources, how to build one target, and how to run one test. List the configure presets in CMakePresets.json with their binaryDir pattern, and the presets the Jenkinsfile builds. Keep the codebase map under 20 lines.
    ```
 
 5. Review the result; fix it by hand if needed.
 6. Move it back: `mv ~/<project>/main/AGENTS.md ~/<project>/instructions/AGENTS.md`.
 7. Fill these placeholders in `~/<project>/opencode.jsonc`:
-   - `TODO_BUILD_DIR` and the generated-file patterns: from `AGENTS.md`.
+   - `TODO_BUILD_DIR`: the presets' `binaryDir` pattern from `AGENTS.md`, for example `*/build/*` for `${sourceDir}/build/${presetName}`. For Make, the build output directories it names.
+   - The generated-file patterns: from `AGENTS.md`.
    - Model lines: commented out until models are chosen in a separate discussion; until then agents use the model picked with `/models`.
 
 ## 8. Task workflow
@@ -120,14 +121,16 @@ One-time setup (run after step 5; the base branch is where task branches start):
 bootstrap/08-task-workflow.sh ~/<project> lemon
 ```
 
-- Writes `BASE_BRANCH` to `~/<project>/agent.env`; adds `.agent/` to `main/.git/info/exclude`; links `agent-task.sh` into `~/.local/bin`.
+- Writes `BASE_BRANCH` to `~/<project>/agent.env`; adds `.agent/` to `main/.git/info/exclude`; links `agent-task.sh` and `agent-check.sh` into `~/.local/bin`.
 - Registers [scripts/agent-worktree-setup.sh](scripts/agent-worktree-setup.sh) as OpenCode's project start command. OpenCode runs it in every worktree it creates, whether you, the script or an agent asked for it. It moves the worktree from a detached HEAD to `agent/<task-id>` (from `origin/<base>`, no upstream) and rejects names that are not task IDs or unallocated `VM-<n>` IDs.
 - A layout created before this step needs `"worktree": { "directory": "../worktrees" }` in `~/<project>/opencode.jsonc` (see [templates/opencode.jsonc](templates/opencode.jsonc)); the script warns if it is missing.
+
+Then add `CHECK_PRESET=<preset>` to `~/<project>/agent.env`: the CMake preset agents check and prebuild by default (step 7 lists the presets in `AGENTS.md`).
 
 Daily use:
 
 ```bash
-agent-task.sh start TASK-1234 "Short title"        # creates the worktree, opens OpenCode in it; reruns reopen it
+agent-task.sh start TASK-1234 "Short title"        # creates the worktree, opens OpenCode in it (with a prebuild); reruns reopen it
 agent-task.sh start --new "Short title" [--parent TASK-1234]   # local task: allocates VM-<n>, then starts it
 agent-task.sh new "Short title" [--parent TASK-1234]           # allocate VM-<n> only (agents use this)
 agent-task.sh done TASK-1234                        # after review: removes the worktree and the local branch
@@ -135,12 +138,39 @@ agent-task.sh list                                  # journal index
 ```
 
 - `done` refuses when the worktree has uncommitted changes and keeps the branch if it has commits on no remote.
-- `done` writes the task's row to the ledger (step 2). It asks for origin, your hands-on minutes, outcome and notes; it fills model, provider, session IDs, cost, agent minutes (prompt-to-idle time) and `agent-check.sh` rounds from the OpenCode sessions that ran in the worktree, and disk use from the worktree. Jenkins rounds and build minutes stay empty until those scripts exist. The cost is OpenCode's figure; the OpenRouter Activity page is authoritative.
+- `done` writes the task's row to the ledger (step 2). It asks for origin, your hands-on minutes, outcome and notes. It fills model, provider, session IDs, cost and agent minutes (prompt-to-idle time, minus time spent in `agent-check.sh`) from the OpenCode sessions that ran in the worktree, and the check rounds and failed rounds from the checks OpenCode ran. Jenkins rounds stay empty until that script exists. The cost is OpenCode's figure; the OpenRouter Activity page is authoritative. Build time and disk use are not model data, so they go to the task journal: one line per check or prebuild with its duration, and the worktree's disk use at `done`.
 - Agents can start another task themselves with OpenCode's `worktree_create` and `session_move` tools (see [templates/AGENTS.md](templates/AGENTS.md)); the start command applies the same rules.
+
+Local check (`agent-check.sh`, run inside a task worktree):
+
+```bash
+agent-check.sh [--preset <name>] [<test>...]   # incremental build, then the named tests
+agent-check.sh --prebuild [--preset <name>]    # configure and build only
+```
+
+- `agent-task.sh start` runs `--prebuild` in the background while the session is open, so the agent's first check finds a warm build; it stops the prebuild when the session ends. A check of the same build waits for it.
+- Agents run it as an OpenCode background command (see [templates/AGENTS.md](templates/AGENTS.md)): OpenCode 2.1.3 stops foreground shell commands after 2 minutes, a fixed default that no setting changes.
+- Short output: the first 5 compiler, flex, linker or CMake errors with their context, or the failing tests with the end of their output; the full log is in `.agent/check/`. Exit codes: 0 passed, 1 build failed, 2 tests failed, 3 setup error, 4 timed out or no free build slot, 5 files changed during the check.
+- No changes against `origin/<base>`: passes without building. Only Python or shell files changed: syntax check only, no build.
+- Build directory: with a CMake preset, the preset's own `binaryDir`, so each worktree builds each preset separately. It is read from CMake's configure output and remembered until `CMakePresets.json` or `CMakeUserPresets.json` changes. If it isn't ignored by Git yet, it is added to `main/.git/info/exclude`. A preset whose `binaryDir` lies outside the worktree is refused (exit 3), because all tasks would share that build. CMake checks need a preset: `--preset <name>` or `CHECK_PRESET`, otherwise exit 3. Make builds in the worktree itself. Uses ccache when it is installed; builds run at low CPU and I/O priority.
+- Commands come from `BUILD_SYSTEM` in `vm.env`: CMake (`cmake --preset`, `cmake --build`, `ctest -R`) or Make (`make`, tests as make targets). To change them, define `check_configure`, `check_build` and `check_test` in `~/<project>/agent.env`. These shell functions run in the worktree with `BUILD_DIR`, `PRESET`, `JOBS` and `LOAD` set; `check_test` gets the test names as arguments. They are required when `BUILD_SYSTEM` is `unknown`.
+- Settings in `~/<project>/agent.env` (defaults in [scripts/agent-check.sh](scripts/agent-check.sh)):
+
+  | Setting | Default | Meaning |
+  | --- | --- | --- |
+  | `CHECK_SLOTS` | 5 | checks running at once on the VM, across worktrees |
+  | `CHECK_JOBS` | min(CPUs/2, RAM GB/2) | build jobs per check |
+  | `CHECK_LOAD` | CPU count | no new build jobs above this load average |
+  | `CHECK_PRESET` | none | CMake preset when `--preset` is not given; also used by the prebuild. Needed for CMake |
+  | `CHECK_TIMEOUT_MIN` | 20 | time limit of one check, after it got its build slot |
+  | `CHECK_PREBUILD_TIMEOUT_MIN` | 120 | time limit of a prebuild |
+  | `CHECK_WAIT_MIN` | 60 | wait for a build slot or for another check of the same build |
+
+- Name the presets CI checks in the Build and test section of `AGENTS.md`, so agents pick the right ones.
 
 Journal and reports (under `~/.agent-factory/`):
 
-- `journal/index.md`: one row per task (source Taiga/local, parent, title, status). `journal/<task-id>.md`: append-only events, written only by scripts.
+- `journal/index.md`: one row per task (source Taiga/local, parent, title, status). `journal/<task-id>.md`: append-only events, written only by scripts. `journal/<task-id>.checks.tsv`: one row per `agent-check.sh` run (start, end, kind, preset, exit code, OpenCode session), read by `done` for the ledger.
 - Agents write `.agent/report.md` in their worktree. When the session ends (and on `done`), the script moves it to `reports/<task-id>/<timestamp>-<label>.md` and links it from the task's journal.
 
 ## Tests

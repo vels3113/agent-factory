@@ -27,7 +27,7 @@ Split software engineering work across AI agents, keeping API costs low while ma
 | Budget | $10 trial top-up to compare with the previous tool; no $100+ upfront commitment. |
 | Baseline | A small subscription-based provider with a proprietary model, used semi-autonomously through a VS Code extension. |
 | Editor | VS Code runs locally and connects to the VM with Remote-SSH; OpenCode, clangd and extensions run on the VM. |
-| Language | C++, C, flex (`.l`), Python, Bash. Build system not yet stated (CMake or Make). |
+| Language | C++, C, flex (`.l`), Python, Bash. Build system: CMake, with several presets checked in CI; the scripts also support Make. |
 
 ## 3. Decision log
 
@@ -48,6 +48,8 @@ These decisions were settled in the design discussion; reopen only with a reason
 | The LLM never waits on Jenkins | Polling loops and expired prompt caches waste tokens | Agent polling CI inside its session |
 | No privacy routing rules | User confirmed none apply | Provider allow-lists, zero-retention routing |
 | Build-resource strategy decided by iteration | Disk, CPU and build time interact; no single upfront answer | Fixing the build layout upfront |
+| Ledger records only the model's work; build time and disk use go to the task journal | The ledger compares models and tasks; build data describes the VM and guides build-resource tuning | Build time and disk columns in the ledger |
+| Agents run `agent-check.sh` as an OpenCode background command | OpenCode 2.1.3 stops foreground shell commands after 2 minutes (a fixed default, found in the binary); background commands have no limit and report when done | Relying on a timeout setting (none in 2.1.3); a plugin that sets the timeout |
 | Validate interactive value before scaling background | With 30-min CI and one agent, background throughput is a few tasks per day | Parallel background agents from day 1 |
 
 ## 4. Stack
@@ -142,8 +144,9 @@ Build time, CPU and disk space on the VM are an open problem: there is no known 
 **Build resources (iterate):**
 
 - Start simple: one background task at a time.
-- Record build time and disk usage per task in the ledger to guide the choices.
-- Options to try: ccache, reusing worktrees, shared vs. separate build directories, cleanup after each task, limited build parallelism (`-j`), `nice`/`ionice` for agent builds so interactive work stays responsive.
+- Record build time and disk usage per task in the task journal to guide the choices (`agent-check.sh` logs each check and prebuild with its duration; `agent-task.sh done` logs disk use).
+- Starting point: a build directory per worktree and preset, at most 5 checks at once (`CHECK_SLOTS`), `nice`/`ionice` (setup-guide.md step 8).
+- Options to try: reusing worktrees, shared vs. separate build directories, cleanup after each task, other `-j` and slot limits.
 - Guard from day 1: the free-disk check before each task (section 6, step 1).
 
 **C/C++/flex rules (for `AGENTS.md` and permissions):**
@@ -157,7 +160,7 @@ Build time, CPU and disk space on the VM are an open problem: there is no known 
 | Script | Purpose |
 | --- | --- |
 | `agent-task.sh` | Task lifecycle. Done (interactive): `start`/`new`/`done`/`list`, worktree via OpenCode, journal, report archive. To do (background): pre-flight, agent run, push, Jenkins polling, repair, ledger entry, limits |
-| `agent-check.sh` | Incremental build of the affected target + targeted tests; bounded output (errors and failing tests) |
+| `agent-check.sh` | Done: incremental build per preset + named tests; bounded output (first errors, failing tests); prebuild while the session starts; VM-wide build slots. Later, if build time warrants it: map changed files to targets and tests |
 | `jenkins-status.sh` | Build status, commit SHA, failed stage, bounded error excerpt |
 
 ## 9. Cost and productivity monitoring
@@ -168,7 +171,7 @@ Phase 1 uses existing dashboards plus a lightweight ledger; no Grafana, Langfuse
 
 - **OpenRouter Activity page:** cost by key, model and provider; tokens and cache behavior.
 - **`opencode stats`:** token usage and cost per session and model.
-- **Task ledger:** CSV, one row per task written by `agent-task.sh done`: session data (model, cost, agent time, check rounds) from OpenCode, human minutes and outcome asked at the prompt. Jenkins rounds and build time are added with the background loop (Phase 1b).
+- **Task ledger:** CSV, one row per task written by `agent-task.sh done`: session data (model, cost, agent time without local check time) from OpenCode, local check rounds and failures from `agent-check.sh`, human minutes and outcome asked at the prompt. Jenkins rounds are added with the background loop (Phase 1b). Build time and disk use go to the task journal, not the ledger.
 
 **Budget controls:**
 
@@ -179,7 +182,7 @@ Phase 1 uses existing dashboards plus a lightweight ledger; no Grafana, Langfuse
 
 Disable automatic top-ups; enforce per-task spend limits in the orchestrator.
 
-**Ledger fields per task:** task ID, type (interactive/background, new/replayed), model and provider, session ID, API cost, agent elapsed time, human hands-on minutes, local check rounds, Jenkins rounds, build time, disk used, outcome (accepted / reworked / failed).
+**Ledger fields per task:** task ID, type (interactive/background, new/replayed), model and provider, session ID, API cost, agent elapsed time, human hands-on minutes, local check rounds, local check failures, Jenkins rounds, outcome (accepted / reworked / failed).
 
 **Success measures:**
 

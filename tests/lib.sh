@@ -38,7 +38,8 @@ install_opencode() {
 
 # sandbox: fresh HOME and PATH. $T/bin comes first and holds test stubs: an
 # `opencode` that stands in for the interactive UI (writes a report, exits) and
-# passes every subcommand to the real binary.
+# passes every subcommand to the real binary. STUB_SESSION_SECONDS keeps the
+# stub session open that long (default 0).
 sandbox() {
     local oc_bin
     oc_bin="$(install_opencode)" || { echo "Cannot install OpenCode $OC_VERSION" >&2; exit 2; }
@@ -58,6 +59,7 @@ sandbox() {
 #!/usr/bin/env bash
 if [[ \$# -eq 1 && -d "\$1" ]]; then
     mkdir -p "\$1/.agent" && echo "# stub session report" > "\$1/.agent/report.md"
+    sleep "\${STUB_SESSION_SECONDS:-0}"
     exit 0
 fi
 exec "$oc_bin/opencode" "\$@"
