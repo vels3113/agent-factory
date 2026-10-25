@@ -40,8 +40,9 @@
     { "action": "shell", "resource": "agent-task.sh start *", "effect": "deny" },
     { "action": "shell", "resource": "agent-task.sh done *", "effect": "deny" },
 
-    // Generated files and build output: edit the sources (.l, not the lexer .c).
-    // TODO: replace with the real paths from AGENTS.md (filled by /init).
+    // Generated files and build output: enforced only here, not repeated in AGENTS.md.
+    // TODO: replace with the real paths from AGENTS.md (filled by /init), and add
+    // a deny rule for every other generated-file pattern it names.
     { "action": "edit", "resource": "*lex.yy.c", "effect": "deny" },
     { "action": "edit", "resource": "TODO_BUILD_DIR/*", "effect": "deny" },
 
