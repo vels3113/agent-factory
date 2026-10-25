@@ -78,6 +78,8 @@ Two model tiers, two credential classes; specialize further only when trial data
 | Main | Implementation and harder repairs | GPT-6.1 Sol; budget alternative MiMo V2.6 Flash |
 | Premium | None during the trial; raise reasoning effort or escalate only when task difficulty justifies it | — |
 
+The candidates go stale quickly; the planned `model-suggest.sh` ranks current OpenRouter models per tier from the catalog and the ledger ([model-suggest-design.md](model-suggest-design.md)).
+
 Record exact model IDs, provider, cost and outcome for every task. Judge models by cost per accepted task and human effort saved, not by token price.
 
 **Agent classes (credentials):**
