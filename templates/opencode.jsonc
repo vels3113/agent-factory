@@ -52,10 +52,11 @@
     // agent-check.sh logs.
     { "action": "edit", "resource": "*.agent/check/*", "effect": "deny" },
 
-    // Agents never edit their own config or instructions. agent.env defines
-    // the build commands agent-check.sh runs (background runs pass --auto).
+    // Agents never edit their own config or instructions. agent-check.conf
+    // defines what agent-check.sh runs (background runs pass --auto).
     { "action": "edit", "resource": "*opencode.jsonc", "effect": "deny" },
     { "action": "edit", "resource": "*agent.env", "effect": "deny" },
+    { "action": "edit", "resource": "*agent-check.conf", "effect": "deny" },
     { "action": "edit", "resource": "*instructions/AGENTS.md", "effect": "deny" },
   ],
 

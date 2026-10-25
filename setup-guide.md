@@ -97,7 +97,7 @@ OpenCode's built-in `/init` ("guided AGENTS.md setup"; not yet in the v2 docs) r
 4. Run, as one line:
 
    ```text
-   /init Keep the Rules section of the existing AGENTS.md unchanged. Fill the Codebase map and Build and test sections. Start from ~/.agent-factory/repo-overview.txt if it exists. This is a large C++/C/flex repo: name the build output directories, the generated lexer .c files and their .l sources, how to build one target, and how to run one test. List the configure presets in CMakePresets.json with their binaryDir pattern, and the presets the Jenkinsfile builds. Keep the codebase map under 20 lines.
+   /init Keep the Rules section of the existing AGENTS.md unchanged. Fill the Codebase map and Build and test sections. Start from ~/.agent-factory/repo-overview.txt if it exists. This is a large C++/C/flex repo: name the build output directories, the generated lexer .c files and their .l sources, how to build one target, and how to run one test. List the configure presets in CMakePresets.json with their binaryDir pattern. Keep the codebase map under 20 lines.
    ```
 
 5. Review the result; fix it by hand if needed.
@@ -125,7 +125,7 @@ bootstrap/08-task-workflow.sh ~/<project> lemon
 - Registers [scripts/agent-worktree-setup.sh](scripts/agent-worktree-setup.sh) as OpenCode's project start command. OpenCode runs it in every worktree it creates, whether you, the script or an agent asked for it. It moves the worktree from a detached HEAD to `agent/<task-id>` (from `origin/<base>`, no upstream) and rejects names that are not task IDs or unallocated `VM-<n>` IDs.
 - A layout created before this step needs `"worktree": { "directory": "../worktrees" }` in `~/<project>/opencode.jsonc` (see [templates/opencode.jsonc](templates/opencode.jsonc)); the script warns if it is missing.
 
-Then add `CHECK_PRESET=<preset>` to `~/<project>/agent.env`: the CMake preset agents check and prebuild by default (step 7 lists the presets in `AGENTS.md`).
+Then set up the check profile (step 9).
 
 Daily use:
 
@@ -141,37 +141,59 @@ agent-task.sh list                                  # journal index
 - `done` writes the task's row to the ledger (step 2). It asks for origin, your hands-on minutes, outcome and notes. It fills model, provider, session IDs, cost and agent minutes (prompt-to-idle time, minus time spent in `agent-check.sh`) from the OpenCode sessions that ran in the worktree, and the check rounds and failed rounds from the checks OpenCode ran. Jenkins rounds stay empty until that script exists. The cost is OpenCode's figure; the OpenRouter Activity page is authoritative. Build time and disk use are not model data, so they go to the task journal: one line per check or prebuild with its duration, and the worktree's disk use at `done`.
 - Agents can start another task themselves with OpenCode's `worktree_create` and `session_move` tools (see [templates/AGENTS.md](templates/AGENTS.md)); the start command applies the same rules.
 
-Local check (`agent-check.sh`, run inside a task worktree):
+Local check (`agent-check.sh`, run inside a task worktree; what it runs comes from the check profile, step 9):
 
 ```bash
-agent-check.sh [--preset <name>] [<test>...]   # incremental build, then the named tests
-agent-check.sh --prebuild [--preset <name>]    # configure and build only
+agent-check.sh [--preset <name>]... [--suite <name>] [<test>...]   # build the presets, run the named tests
+agent-check.sh --prebuild [--preset <name>]                        # configure and build only
+agent-check.sh --list                                              # presets, test suites, tests
 ```
 
-- `agent-task.sh start` runs `--prebuild` in the background while the session is open, so the agent's first check finds a warm build; it stops the prebuild when the session ends. A check of the same build waits for it.
+- `agent-task.sh start` runs `--prebuild` for the default preset in the background while the session is open, so the agent's first check finds a warm build; it stops the prebuild when the session ends. A check of the same preset waits for it.
 - Agents run it as an OpenCode background command (see [templates/AGENTS.md](templates/AGENTS.md)): OpenCode 2.1.3 stops foreground shell commands after 2 minutes, a fixed default that no setting changes.
 - Short output: the first 5 compiler, flex, linker or CMake errors with their context, or the failing tests with the end of their output; the full log is in `.agent/check/`. Exit codes: 0 passed, 1 build failed, 2 tests failed, 3 setup error, 4 timed out or no free build slot, 5 files changed during the check.
-- No changes against `origin/<base>`: passes without building. Only Python or shell files changed: syntax check only, no build.
-- Build directory: with a CMake preset, the preset's own `binaryDir`, so each worktree builds each preset separately. It is read from CMake's configure output and remembered until `CMakePresets.json` or `CMakeUserPresets.json` changes. If it isn't ignored by Git yet, it is added to `main/.git/info/exclude`. A preset whose `binaryDir` lies outside the worktree is refused (exit 3), because all tasks would share that build. CMake checks need a preset: `--preset <name>` or `CHECK_PRESET`, otherwise exit 3. Make builds in the worktree itself. Uses ccache when it is installed; builds run at low CPU and I/O priority.
-- Commands come from `BUILD_SYSTEM` in `vm.env`: CMake (`cmake --preset`, `cmake --build`, `ctest -R`) or Make (`make`, tests as make targets). To change them, define `check_configure`, `check_build` and `check_test` in `~/<project>/agent.env`. These shell functions run in the worktree with `BUILD_DIR`, `PRESET`, `JOBS` and `LOAD` set; `check_test` gets the test names as arguments. They are required when `BUILD_SYSTEM` is `unknown`.
-- Settings in `~/<project>/agent.env` (defaults in [scripts/agent-check.sh](scripts/agent-check.sh)):
-
-  | Setting | Default | Meaning |
-  | --- | --- | --- |
-  | `CHECK_SLOTS` | 5 | checks running at once on the VM, across worktrees |
-  | `CHECK_JOBS` | min(CPUs/2, RAM GB/2) | build jobs per check |
-  | `CHECK_LOAD` | CPU count | no new build jobs above this load average |
-  | `CHECK_PRESET` | none | CMake preset when `--preset` is not given; also used by the prebuild. Needed for CMake |
-  | `CHECK_TIMEOUT_MIN` | 20 | time limit of one check, after it got its build slot |
-  | `CHECK_PREBUILD_TIMEOUT_MIN` | 120 | time limit of a prebuild |
-  | `CHECK_WAIT_MIN` | 60 | wait for a build slot or for another check of the same build |
-
-- Name the presets CI checks in the Build and test section of `AGENTS.md`, so agents pick the right ones.
+- Diff filter: no changes against `origin/<base>` passes without building. Changed Python and shell files get a syntax check; the build runs only if a changed file matches the profile's `CHECK_BUILD_PATHS`. Several `--preset` options build one preset after the other and stop at the first failure.
+- Builds run at low CPU and I/O priority, in at most `CHECK_SLOTS` checks at once on the VM.
 
 Journal and reports (under `~/.agent-factory/`):
 
-- `journal/index.md`: one row per task (source Taiga/local, parent, title, status). `journal/<task-id>.md`: append-only events, written only by scripts. `journal/<task-id>.checks.tsv`: one row per `agent-check.sh` run (start, end, kind, preset, exit code, OpenCode session), read by `done` for the ledger.
+- `journal/index.md`: one row per task (source Taiga/local, parent, title, status). `journal/<task-id>.md`: append-only events, written only by scripts. `journal/<task-id>.checks.tsv`: one row per `agent-check.sh` run (start, end, kind, presets, exit code, OpenCode session, tree hash of the checked files), read by `done` for the ledger.
 - Agents write `.agent/report.md` in their worktree. When the session ends (and on `done`), the script moves it to `reports/<task-id>/<timestamp>-<label>.md` and links it from the task's journal.
+
+## 9. Check profile
+
+`agent-check.sh` is a generic wrapper; the profile `~/<project>/agent-check.conf` describes this repo's CI procedure in its terms: the presets CI builds, how to configure and build one, the test suites and how to run named tests, an output parser per step, and the files whose change needs a build. It is sourced bash; its header describes the interface. Agents may not edit it.
+
+1. Draft it (run after step 8):
+
+   ```bash
+   bootstrap/09-check-profile.sh ~/<project>
+   ```
+
+   Writes `~/<project>/main/agent-check.draft.conf` (kept out of Git): a new CMake or Make profile for `BUILD_SYSTEM`, with the configure presets that the Jenkinsfile builds; or a copy of the installed profile, to change it later. Never overwrites a draft.
+2. Complete it with OpenCode, as in step 7: run `opencode` in `~/<project>/main`, pick a model with `/models`, and send the prompt the script prints. It reads the Jenkinsfile and the scripts it calls, writes one `test_<suite>` function per CI test run, and lists what CI runs that the profile leaves out. Review the draft.
+3. Validate and install it:
+
+   ```bash
+   bootstrap/09-check-profile.sh ~/<project> --validate [<preset>...]
+   ```
+
+   Builds the presets (default: the default preset) with `agent-check.sh --prebuild` in a throwaway local task worktree, checks that the build output stays out of Git, shows `agent-check.sh --list` and the step times, then moves the draft to `~/<project>/agent-check.conf` (asks before replacing a different one). The worktree is removed; its logs stay in `~/.agent-factory/reports/<task-id>/`. A cold build can take long.
+
+Wrapper settings, overridable in the profile (defaults in [scripts/agent-check.sh](scripts/agent-check.sh)):
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `CHECK_SLOTS` | 5 | checks running at once on the VM, across worktrees |
+| `CHECK_JOBS` | min(CPUs/2, RAM GB/2) | build jobs per check |
+| `CHECK_LOAD` | CPU count | no new build jobs above this load average |
+| `CHECK_TIMEOUT_MIN` | 20 | time limit of one check, after it got its build slot |
+| `CHECK_PREBUILD_TIMEOUT_MIN` | 120 | time limit of a prebuild |
+| `CHECK_WAIT_MIN` | 60 | wait for a build slot or for another check of the same preset |
+
+- Build directory: the one the profile's `build_dir` reports (CMake template: the preset's own `binaryDir`, read from CMake's configure output; Make template: the worktree itself). It must lie inside the worktree, or the check stops with exit 3, because tasks would share one build. If Git doesn't ignore it yet, it is added to `main/.git/info/exclude`.
+- The CMake template adds ccache as compiler launcher when ccache is installed; the Make template puts its compiler symlinks first on `PATH`.
+- A proposal for a result cache, deferred until `checks.tsv` shows repeated checks of the same files: [check-result-cache.md](check-result-cache.md).
 
 ## Tests
 

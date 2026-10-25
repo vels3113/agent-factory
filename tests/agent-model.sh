@@ -47,7 +47,7 @@ check "report written to .agent/report.md" test -s "$wt/.agent/report.md"
 check "report names the side task" grep -q 'VM-[0-9]' "$wt/.agent/report.md"
 
 echo "# ledger from real sessions"
-printf 'check_build() { echo "build ok"; }\n' >> "$P/agent.env"
+printf 'CHECK_PRESETS=(default)\ncheck_build() { echo "build ok"; }\n' > "$P/agent-check.conf"
 agent_run "$wt" "Run the local check twice, as two separate shell commands, then stop. Don't change any files."
 check "agent ran agent-check.sh" test -s "$journal/TASK-2.checks.tsv"
 printf 'new\n5\naccepted\n\n' | agent-task.sh done TASK-2 >/dev/null 2>&1

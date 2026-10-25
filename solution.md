@@ -49,6 +49,7 @@ These decisions were settled in the design discussion; reopen only with a reason
 | No privacy routing rules | User confirmed none apply | Provider allow-lists, zero-retention routing |
 | Build-resource strategy decided by iteration | Disk, CPU and build time interact; no single upfront answer | Fixing the build layout upfront |
 | Ledger records only the model's work; build time and disk use go to the task journal | The ledger compares models and tasks; build data describes the VM and guides build-resource tuning | Build time and disk columns in the ledger |
+| `agent-check.sh` is a generic wrapper; the repo's CI procedure lives in a check profile (`~/<project>/agent-check.conf`, sourced bash) drafted by `09-check-profile.sh`, completed with an OpenCode prompt, validated by a build | Agent features (interface, output, limits, logs) stay the same for any repo; the profile mirrors CI, which has several presets and test runs | Build-system defaults inside the wrapper; settings in `agent.env` |
 | Agents run `agent-check.sh` as an OpenCode background command | OpenCode 2.1.3 stops foreground shell commands after 2 minutes (a fixed default, found in the binary); background commands have no limit and report when done | Relying on a timeout setting (none in 2.1.3); a plugin that sets the timeout |
 | Validate interactive value before scaling background | With 30-min CI and one agent, background throughput is a few tasks per day | Parallel background agents from day 1 |
 
@@ -145,7 +146,7 @@ Build time, CPU and disk space on the VM are an open problem: there is no known 
 
 - Start simple: one background task at a time.
 - Record build time and disk usage per task in the task journal to guide the choices (`agent-check.sh` logs each check and prebuild with its duration; `agent-task.sh done` logs disk use).
-- Starting point: a build directory per worktree and preset, at most 5 checks at once (`CHECK_SLOTS`), `nice`/`ionice` (setup-guide.md step 8).
+- Starting point: a build directory per worktree and preset, at most 5 checks at once (`CHECK_SLOTS`), `nice`/`ionice` (setup-guide.md steps 8 and 9).
 - Options to try: reusing worktrees, shared vs. separate build directories, cleanup after each task, other `-j` and slot limits.
 - Guard from day 1: the free-disk check before each task (section 6, step 1).
 
@@ -160,7 +161,7 @@ Build time, CPU and disk space on the VM are an open problem: there is no known 
 | Script | Purpose |
 | --- | --- |
 | `agent-task.sh` | Task lifecycle. Done (interactive): `start`/`new`/`done`/`list`, worktree via OpenCode, journal, report archive. To do (background): pre-flight, agent run, push, Jenkins polling, repair, ledger entry, limits |
-| `agent-check.sh` | Done: incremental build per preset + named tests; bounded output (first errors, failing tests); prebuild while the session starts; VM-wide build slots. Later, if build time warrants it: map changed files to targets and tests |
+| `agent-check.sh` | Done: generic wrapper around the repo's CI procedure, described in a check profile (`bootstrap/09-check-profile.sh`): presets, build, test suites, output parsers. Adds the agent interface, bounded output (first errors, failing tests), a diff filter (no build when no build file changed), prebuild while the session starts, VM-wide build slots, logs. Later, if the data warrants it: a result cache (check-result-cache.md), mapping changed files to targets and tests |
 | `jenkins-status.sh` | Build status, commit SHA, failed stage, bounded error excerpt |
 
 ## 9. Cost and productivity monitoring

@@ -1,40 +1,51 @@
 #!/usr/bin/env bash
-# Local check for agents: incremental build of the current task worktree, then
-# the named tests, with short output (first errors, failing tests). The full log
-# stays in .agent/check/. Agents run it as an OpenCode background command:
-# OpenCode 2.1.3 stops foreground shell commands after 2 minutes.
+# Local check for agents: runs the project's CI procedure as its check profile
+# describes it (<project>/agent-check.conf, from bootstrap/09-check-profile.sh),
+# for one or more presets, and adds what agents need: short output (first
+# errors, failing tests), no build when the change doesn't need one, a
+# prebuild, VM-wide build slots, low priority, time limits, and logs.
+# Agents run it as an OpenCode background command: OpenCode 2.1.3 stops
+# foreground shell commands after 2 minutes.
 # Usage:
-#   agent-check.sh [--preset <name>] [<test>...]   build, then run the named tests
-#   agent-check.sh --prebuild [--preset <name>]    configure and build only (agent-task.sh start)
+#   agent-check.sh [--preset <name>]... [--suite <name>] [<test>...]
+#       build each preset (default: the profile's), then run the named tests
+#       (default suite), or the whole suite when --suite is given without names
+#   agent-check.sh --prebuild [--preset <name>]   configure and build only (agent-task.sh start)
+#   agent-check.sh --list                        presets, test suites and their tests
 # Exit codes: 0 passed, 1 build failed, 2 tests failed, 3 setup error (not the
 # change's fault), 4 timed out or no free build slot, 5 files changed during the check.
-# Settings: CHECK_* lines and check_* functions in <project>/agent.env
-# (setup-guide.md step 8). Each run is logged in the task journal, with its
-# duration, and in journal/<id>.checks.tsv for the ledger.
+# Each run is logged in the task journal with its step durations, and in
+# journal/<id>.checks.tsv for the ledger: start, end, kind, presets, exit code,
+# OpenCode session, tree hash of the checked files.
 set -euo pipefail
 self="$(readlink -f "$0")"
 source "$(dirname "$self")/agent-lib.sh"
 
-usage() { sed -n '6,10p' "$self" | sed 's/^# \{0,1\}//' >&2; exit 3; }
+usage() { awk '/^# Usage:/,/during the check\./' "$self" | sed 's/^# \{0,1\}//' >&2; exit 3; }
 setup_error() { echo "agent-check: SETUP ERROR: $1" >&2; exit 3; }
 fmt_secs() { printf '%dm%02ds' $(($1 / 60)) $(($1 % 60)); }
 minutes() {
-    [[ "$2" =~ ^[0-9]+(\.[0-9]+)?$ ]] || setup_error "$1=$2 in agent.env is not a number of minutes."
+    [[ "$2" =~ ^[0-9]+(\.[0-9]+)?$ ]] || setup_error "$1=$2 in the profile is not a number of minutes."
     awk -v m="$2" 'BEGIN { printf "%d", m * 60 }'
 }
+known() { local x="$1" y; shift; for y in "$@"; do [[ "$x" == "$y" ]] && return 0; done; return 1; }
 
-mode=check preset=""
+mode=check suite=""
+presets=()
 tests=()
 while (($#)); do
     case "$1" in
         --prebuild) mode=prebuild ;;
-        --preset) preset="${2:-}"; [[ -n "$preset" ]] || usage; shift ;;
+        --list) mode=list ;;
+        --preset) [[ -n "${2:-}" ]] || usage; presets+=("$2"); shift ;;
+        --suite) [[ -n "${2:-}" ]] || usage; suite="$2"; shift ;;
         -*) usage ;;
         *) tests+=("$1") ;;
     esac
     shift
 done
-[[ "$mode" == prebuild && ${#tests[@]} -gt 0 ]] && usage
+[[ "$mode" != check && (${#tests[@]} -gt 0 || -n "$suite") ]] && usage
+[[ "$mode" == prebuild && ${#presets[@]} -gt 1 ]] && usage
 
 [[ -r "$factory_dir/vm.env" ]] || setup_error "missing $factory_dir/vm.env; run bootstrap/04-vm-facts.sh."
 source "$factory_dir/vm.env"
@@ -42,100 +53,120 @@ top="$(git rev-parse --show-toplevel 2>/dev/null)" || setup_error "not in a Git 
 id="$(basename "$top")"
 { valid_id "$id" && [[ "$(cd "$top/.." && pwd -P)" == "$(cd "$WORKTREES_DIR" 2>/dev/null && pwd -P)" ]]; } \
     || setup_error "$top is not a task worktree ($WORKTREES_DIR/<task-id>)."
+[[ -r "$PROJECT_DIR/agent.env" ]] || setup_error "missing $PROJECT_DIR/agent.env; run bootstrap/08-task-workflow.sh."
+source "$PROJECT_DIR/agent.env"
+profile="${AGENT_CHECK_PROFILE:-$PROJECT_DIR/agent-check.conf}"
+[[ -r "$profile" ]] || setup_error "missing $profile; run bootstrap/09-check-profile.sh (setup-guide.md step 9)."
 
-# Defaults; <project>/agent.env overrides any of them. The check_* functions run
-# in the worktree with PRESET, JOBS, LOAD and BUILD_DIR set (CMake: the preset's
-# binaryDir once known, empty before the first configure; Make: .);
-# check_test gets the test names as arguments.
+# Wrapper settings; the profile can override them. The profile's interface is
+# described in its header (written by bootstrap/09-check-profile.sh).
 CHECK_SLOTS=5               # checks running at once on the VM, all worktrees
 CHECK_JOBS=""               # build jobs per check; default min(CPUs/2, RAM GB/2)
 CHECK_LOAD=""               # no new jobs above this load; default CPU count
-CHECK_PRESET=""             # CMake preset when --preset is not given; CMake needs one
 CHECK_TIMEOUT_MIN=20        # one check, after it got its build slot
 CHECK_PREBUILD_TIMEOUT_MIN=120
-CHECK_WAIT_MIN=60           # waiting for a build slot or another check of the same build
-case "$BUILD_SYSTEM" in
-    cmake)
-        # Builds go to the preset's binaryDir; BUILD_DIR is empty until CMake
-        # has reported it (see configure below).
-        check_configure() {
-            [[ -n "$PRESET" ]] || { echo "No CMake preset: pass --preset <name>, or set CHECK_PRESET in agent.env."; return 3; }
-            [[ -n "$BUILD_DIR" && -e "$BUILD_DIR/CMakeCache.txt" ]] && return 0
-            local launcher=()
-            command -v ccache >/dev/null && launcher=(-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache)
-            cmake --preset "$PRESET" "${launcher[@]}"
-        }
-        check_build() { cmake --build "$BUILD_DIR" --parallel "$JOBS" -- -l "$LOAD"; }
-        check_test() {
-            local names
-            names="$(IFS='|'; echo "$*")"
-            ctest --test-dir "$BUILD_DIR" --output-on-failure --no-tests=error -j "$JOBS" -R "^($names)\$"
-        }
-        ;;
-    make)
-        with_ccache() { [[ -d /usr/lib/ccache ]] && command -v ccache >/dev/null && PATH="/usr/lib/ccache:$PATH"; return 0; }
-        check_configure() { :; }
-        check_build() { with_ccache; make -j"$JOBS" -l "$LOAD"; }
-        check_test() { with_ccache; make -j"$JOBS" -l "$LOAD" "$@"; }
-        ;;
-esac
-[[ -r "$PROJECT_DIR/agent.env" ]] || setup_error "missing $PROJECT_DIR/agent.env; run bootstrap/08-task-workflow.sh."
-source "$PROJECT_DIR/agent.env"
-declare -F check_build >/dev/null \
-    || setup_error "build system '$BUILD_SYSTEM': define check_build and check_test in $PROJECT_DIR/agent.env (setup-guide.md step 8)."
+CHECK_WAIT_MIN=60           # waiting for a build slot or another check of the same preset
+CHECK_PRESETS=()
+CHECK_DEFAULT_PRESET=""
+CHECK_SUITES=()
+CHECK_DEFAULT_SUITE=""
+CHECK_BUILD_PATHS=()        # empty: every change needs a build
+declare -A CHECK_PARSER=()
+source "$profile"
+((${#CHECK_PRESETS[@]})) || setup_error "no CHECK_PRESETS in $profile."
+declare -F check_build >/dev/null || setup_error "no check_build function in $profile."
 declare -F check_configure >/dev/null || check_configure() { :; }
-declare -F check_test >/dev/null || check_test() { echo "No check_test in agent.env; cannot run tests: $*"; return 3; }
 
-export PRESET="${preset:-$CHECK_PRESET}" BUILD_DIR=""
-[[ "$BUILD_SYSTEM" == make ]] && BUILD_DIR=.
-checks="$top/.agent/check"
-mkdir -p "$checks"
-# CMake presets build in their own binaryDir. CMake reports it when it
-# configures; it is remembered per preset until the preset files change.
-dir_file=""
-if [[ "$BUILD_SYSTEM" == cmake && -n "$PRESET" ]]; then
-    dir_file="$checks/$PRESET.dir"
-    if [[ -s "$dir_file" && ! "$top/CMakePresets.json" -nt "$dir_file" && ! "$top/CMakeUserPresets.json" -nt "$dir_file" ]]; then
-        BUILD_DIR="$(cat "$dir_file")"
-    fi
+((${#presets[@]})) || presets=("${CHECK_DEFAULT_PRESET:-${CHECK_PRESETS[0]}}")
+for p in "${presets[@]}"; do
+    known "$p" "${CHECK_PRESETS[@]}" || setup_error "unknown preset '$p'; presets: ${CHECK_PRESETS[*]}."
+done
+[[ ${#tests[@]} -gt 0 && -z "$suite" ]] && suite="${CHECK_DEFAULT_SUITE:-${CHECK_SUITES[0]:-}}"
+if [[ -n "$suite" || ${#tests[@]} -gt 0 ]]; then
+    known "$suite" "${CHECK_SUITES[@]}" || setup_error "unknown test suite '$suite'; suites: ${CHECK_SUITES[*]:-none}."
+    declare -F "test_$suite" >/dev/null || setup_error "no test_$suite function in $profile."
 fi
+
 cpus="${CPU_COUNT:-$(nproc)}"
 jobs=$((cpus / 2)); mem_jobs=$((${MEM_TOTAL_GB:-0} / 2))
 ((mem_jobs > 0 && mem_jobs < jobs)) && jobs=$mem_jobs
-export JOBS="${CHECK_JOBS:-$((jobs > 0 ? jobs : 1))}" LOAD="${CHECK_LOAD:-$cpus}"
+export JOBS="${CHECK_JOBS:-$((jobs > 0 ? jobs : 1))}" LOAD="${CHECK_LOAD:-$cpus}" PRESET="" BUILD_DIR=""
 run_s="$(minutes CHECK_TIMEOUT_MIN "$CHECK_TIMEOUT_MIN")"
 [[ "$mode" == prebuild ]] && run_s="$(minutes CHECK_PREBUILD_TIMEOUT_MIN "$CHECK_PREBUILD_TIMEOUT_MIN")"
 wait_s="$(minutes CHECK_WAIT_MIN "$CHECK_WAIT_MIN")"
-[[ "$CHECK_SLOTS" =~ ^[1-9][0-9]*$ ]] || setup_error "CHECK_SLOTS=$CHECK_SLOTS in agent.env is not a positive number."
+[[ "$CHECK_SLOTS" =~ ^[1-9][0-9]*$ ]] || setup_error "CHECK_SLOTS=$CHECK_SLOTS in the profile is not a positive number."
+
+checks="$top/.agent/check"
+mkdir -p "$checks"
+top_real="$(cd "$top" && pwd -P)"
+# A preset's build directory, as the profile's build_dir reported it last.
+dir_of() { cat "$checks/$1.dir" 2>/dev/null || true; }
+
+if [[ "$mode" == list ]]; then
+    default="${CHECK_DEFAULT_PRESET:-${CHECK_PRESETS[0]}}"
+    echo "Presets (* default):"
+    for p in "${CHECK_PRESETS[@]}"; do
+        d="$(dir_of "$p")"
+        echo "  $p$([[ "$p" == "$default" ]] && echo ' *')${d:+  (built in $d)}"
+    done
+    echo "Test suites (* default):"
+    for s in "${CHECK_SUITES[@]}"; do
+        echo "  $s$([[ "$s" == "${CHECK_DEFAULT_SUITE:-${CHECK_SUITES[0]}}" ]] && echo ' *')"
+        declare -F "list_$s" >/dev/null || continue
+        d="$(dir_of "$default")"
+        if [[ -z "$d" ]] && declare -F build_dir >/dev/null; then
+            echo "    (tests are listed after the first build of preset $default)"
+            continue
+        fi
+        (cd "$top" && PRESET="$default" BUILD_DIR="$d" "list_$s" 2>/dev/null) | awk 'NR <= 200 { print "    " $0 } END { if (NR > 200) print "    ... and " NR - 200 " more" }'
+    done
+    exit 0
+fi
 
 { ls -1t "$checks"/*.log 2>/dev/null || true; } | tail -n +20 | xargs -r rm -f
 log="$checks/$(date '+%Y%m%d-%H%M%S')-$mode-$$.log"
+stage_out="$checks/.stage-$$.out"
 t0="$(date +%s)"
 init_journal
-label="$mode${PRESET:+ $PRESET}"
+label="$mode $(IFS=+; echo "${presets[*]}")"
+timings=""
 
-# finish <exit> <result> [excerpt-kind]: print the result, record the run, exit.
+# State of the worktree including untracked files (build directories are
+# ignored), to detect edits during the check; also recorded in checks.tsv.
+tree_state() {
+    local idx rc=0
+    idx="$(mktemp)"
+    cp "$(git -C "$top" rev-parse --path-format=absolute --git-path index)" "$idx" 2>/dev/null || true
+    { GIT_INDEX_FILE="$idx" git -C "$top" add -A && GIT_INDEX_FILE="$idx" git -C "$top" write-tree; } 2>/dev/null || rc=1
+    rm -f "$idx"
+    return $rc
+}
+
+# finish <exit> <result> [parser]: print the result, record the run, exit.
 finish() {
     trap - TERM INT
-    local secs=$(($(date +%s) - t0))
-    echo "agent-check: $2 (${PRESET:+preset $PRESET, }$(fmt_secs "$secs"))"
+    local secs=$(($(date +%s) - t0)) tree="${before:-}"
+    [[ -n "$tree" ]] || tree="$(tree_state)" || tree=""
+    echo "agent-check: $2 ($(fmt_secs "$secs"))"
     [[ -n "${3:-}" ]] && excerpt "$3"
+    rm -f "$stage_out"
     [[ -s "$log" ]] && echo "Full log: $log"
-    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$t0" "$(date +%s)" "$mode" "$PRESET" "$1" "${OPENCODE_SESSION_ID:-}" \
-        >> "$journal_dir/$id.checks.tsv"
-    log_event "$id" "$label: $2, $(fmt_secs "$secs")"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$t0" "$(date +%s)" "$mode" "$(IFS=+; echo "${presets[*]}")" "$1" \
+        "${OPENCODE_SESSION_ID:-}" "$tree" >> "$journal_dir/$id.checks.tsv"
+    log_event "$id" "$label: $2, $(fmt_secs "$secs")${timings:+ ($timings)}"
     exit "$1"
 }
 trap 'finish 4 "STOPPED by a signal"' TERM INT
 
-# excerpt build|test|tail: the part of the log worth reading, at most 50 lines.
+# excerpt compiler|ctest|pytest|generic: the part of the last step's output
+# worth reading, at most 50 lines.
 excerpt() {
-    python3 -I - "$1" "$log" <<'EOF'
+    python3 -I - "$1" "$stage_out" <<'EOF'
 import re, sys
 kind, path = sys.argv[1:]
 lines = open(path, errors="replace").read().splitlines()
 out = []
-if kind == "build":
+if kind == "compiler":
     diag = re.compile(r"\b(fatal )?error:|^\S+\.l:\d+:|undefined reference|ld returned|^CMake Error")
     ctx = re.compile(r"^\s|note:|required from|In instantiation")
     shown, i = [], 0
@@ -150,7 +181,7 @@ if kind == "build":
             i += 1
     more = len({l for l in lines if diag.search(l)} - set(shown))
     if more: out.append(f"... and {more} more error line(s)")
-elif kind == "test" and "The following tests FAILED:" in lines:
+elif kind == "ctest" and "The following tests FAILED:" in lines:
     k = lines.index("The following tests FAILED:")
     names = [m.group(1) for l in lines[k + 1:] if (m := re.match(r"^\s*\d+ - (.+?) \([^)]*\)\s*$", l))]
     out.append(f"Failed tests ({len(names)}): " + ", ".join(names[:10]) + (f" and {len(names) - 10} more" if len(names) > 10 else ""))
@@ -162,6 +193,17 @@ elif kind == "test" and "The following tests FAILED:" in lines:
         end = next((n for n in range(start + 1, len(lines)) if stop.search(lines[n])), len(lines))
         out.append(f"--- {name}")
         out += lines[max(start + 1, end - 15):end]
+elif kind == "pytest":
+    fails = [l for l in lines if re.match(r"^(FAILED|ERROR) ", l)]
+    if fails:
+        out.append(f"Failed tests ({len(fails)}):")
+        out += fails[:10]
+        sec = re.compile(r"^_{3,} .+ _{3,}$|^=+ short test summary")
+        starts = [n for n, l in enumerate(lines) if sec.search(l)]
+        for a, b in list(zip(starts, starts[1:]))[:3]:
+            if lines[a].startswith("="): break
+            out.append(lines[a])
+            out += lines[max(a + 1, b - 15):b]
 if not out:
     out = lines[-30:]
 for l in out[:50]:
@@ -170,22 +212,27 @@ if len(out) > 50: print("... (cut; see the full log)")
 EOF
 }
 
-# run_stage <timeout-s> <function> [args]: one check_* function, output to the log.
+# run_stage <name> <function> [args]: one profile function in the worktree,
+# within the time left; output to $stage_out and the log.
 run_stage() {
-    local secs="$1"
+    local name="$1" rc=0 s0 left
     shift
-    printf '\n=== %s\n' "$*" >> "$log"
-    timeout -k 10 "$secs" bash -c "$(declare -f); cd \"\$1\" && shift && \"\$@\"" _ "$top" "$@" >> "$log" 2>&1
+    s0="$(date +%s)"
+    left=$((deadline - s0))
+    printf '\n=== %s%s: %s\n' "${PRESET:+$PRESET }" "$name" "$*" >> "$log"
+    timeout -k 10 "$((left > 0 ? left : 1))" bash -c "$(declare -f); cd \"\$1\" && shift && \"\$@\"" _ "$top" "$@" \
+        > "$stage_out" 2>&1 || rc=$?
+    cat "$stage_out" >> "$log"
+    timings+="${timings:+, }${PRESET:+$PRESET }$name $(fmt_secs $(($(date +%s) - s0)))"
+    return $rc
 }
 
-# State of the worktree including untracked files, to detect edits during the check.
-tree_state() {
-    local idx rc=0
-    idx="$(mktemp)"
-    cp "$(git -C "$top" rev-parse --path-format=absolute --git-path index)" "$idx" 2>/dev/null || true
-    { GIT_INDEX_FILE="$idx" git -C "$top" add -A && GIT_INDEX_FILE="$idx" git -C "$top" write-tree; } 2>/dev/null || rc=1
-    rm -f "$idx"
-    return $rc
+# stage_failed <rc> <result> <parser> [exit]
+stage_failed() {
+    (($1 == 124 || $1 == 137)) && finish 4 "TIMED OUT after $((run_s / 60)) min" generic
+    [[ -n "${before:-}" && "$(tree_state)" != "$before" ]] && finish 5 "FILES CHANGED during the check; run it again"
+    (($1 == 3)) && finish 3 "SETUP ERROR in $2" generic
+    finish "${4:-1}" "$2" "$3"
 }
 
 lint_files() {
@@ -200,23 +247,75 @@ lint_files() {
     return $rc
 }
 
-# Scope: nothing changed, or only Python and shell files (no build needed).
-lint_only=()
-if [[ "$mode" == check && ${#tests[@]} -eq 0 ]]; then
+# accept_build_dir <dir>: the build directory the profile reported for $PRESET.
+# Refused outside the worktree (tasks would share one build); kept out of Git
+# through info/exclude, which all worktrees share.
+accept_build_dir() {
+    local d rel exclude
+    d="$(cd "$top" && cd "$1" 2>/dev/null && pwd -P)" || finish 3 "SETUP ERROR: build directory '$1' of preset $PRESET does not exist"
+    case "$d/" in
+        "$top_real"/*) ;;
+        *) finish 3 "SETUP ERROR: preset $PRESET builds outside the worktree ($d), so tasks would share one build; set its build directory inside the worktree" ;;
+    esac
+    BUILD_DIR="$d"
+    echo "$d" > "$checks/$PRESET.dir"
+    rel="${d#"$top_real"}"; rel="${rel#/}"
+    [[ -z "$rel" ]] && return 0
+    git -C "$top" check-ignore -q "$rel/x" && return 0
+    exclude="$(git -C "$top" rev-parse --path-format=absolute --git-common-dir)/info/exclude"
+    echo "/$rel/" >> "$exclude"
+    log_event "$id" "added /$rel/ to $exclude (build directory of preset $PRESET)"
+}
+
+# build_preset <preset>: configure and build one preset, holding its lock.
+build_preset() {
+    export PRESET="$1" BUILD_DIR
+    BUILD_DIR="$(dir_of "$1")"
+    exec 9>"$checks/$1.lock"
+    flock -w "$((wait_s - ($(date +%s) - t0) > 0 ? wait_s - ($(date +%s) - t0) : 1))" 9 \
+        || finish 4 "TIMED OUT waiting $CHECK_WAIT_MIN min for another check or prebuild of preset $1"
+    run_stage configure check_configure || stage_failed $? "BUILD FAILED (configure, preset $1)" "${CHECK_PARSER[build]:-compiler}"
+    if declare -F build_dir >/dev/null; then
+        local d
+        d="$(cd "$top" && build_dir "$stage_out")" || d=""
+        [[ -n "$d" ]] && accept_build_dir "$d"
+        [[ -n "$BUILD_DIR" ]] || finish 3 "SETUP ERROR: build_dir in the profile reported no build directory for preset $1" generic
+    fi
+    # Taken after the first configure: a new build directory is ignored by Git only now.
+    [[ -n "${before:-}" ]] || before="$(tree_state)" || setup_error "cannot read the worktree state."
+    run_stage build check_build || stage_failed $? "BUILD FAILED (preset $1)" "${CHECK_PARSER[build]:-compiler}"
+}
+
+# Scope: what the change needs. Python and shell files get a syntax check; a
+# build only if a changed file matches CHECK_BUILD_PATHS.
+deadline=$((t0 + run_s))
+need_build=1
+if [[ "$mode" == check && -z "$suite" ]]; then
     base="$(git -C "$top" merge-base "origin/$BASE_BRANCH" HEAD 2>/dev/null)" \
         || setup_error "no common commit with origin/$BASE_BRANCH."
     mapfile -t changed < <({ git -C "$top" diff --name-only "$base"; git -C "$top" ls-files --others --exclude-standard; } | sort -u)
     [[ ${#changed[@]} -eq 0 ]] && finish 0 "OK, nothing to check (no changes against origin/$BASE_BRANCH)"
-    if ! printf '%s\n' "${changed[@]}" | grep -qvE '\.(py|sh)$'; then lint_only=("${changed[@]}"); fi
+    mapfile -t scripts < <(printf '%s\n' "${changed[@]}" | grep -E '\.(py|sh)$' || true)
+    if [[ ${#scripts[@]} -gt 0 ]]; then
+        run_stage syntax lint_files "${scripts[@]}" || stage_failed $? "SYNTAX CHECK FAILED (Python/shell files)" generic
+    fi
+    if [[ ${#CHECK_BUILD_PATHS[@]} -gt 0 ]]; then
+        need_build=0
+        for f in "${changed[@]}"; do
+            for pat in "${CHECK_BUILD_PATHS[@]}"; do
+                # shellcheck disable=SC2053  # $pat is a glob pattern
+                [[ "$f" == $pat ]] && { need_build=1; break 2; }
+            done
+        done
+    fi
+    ((need_build)) || finish 0 "OK, no build needed: ${#changed[@]} changed file(s), none in CHECK_BUILD_PATHS${scripts:+; syntax check passed}"
 fi
 
 # Lower priority than interactive work; inherited by every build process.
 renice -n 10 -p $$ >/dev/null 2>&1 || true
 ionice -c2 -n7 -p $$ >/dev/null 2>&1 || true
 
-# Wait for the build directory, then for a VM-wide build slot.
-exec 9>"$checks/${PRESET:-default}.lock"
-flock -w "$wait_s" 9 || finish 4 "TIMED OUT waiting $CHECK_WAIT_MIN min for another check or prebuild of this build"
+# One VM-wide build slot for the whole run.
 slots="$factory_dir/check-slots"
 mkdir -p "$slots"
 until (($(date +%s) - t0 > wait_s)); do
@@ -228,65 +327,26 @@ until (($(date +%s) - t0 > wait_s)); do
     sleep 2
 done
 { : >&8; } 2>/dev/null || finish 4 "TIMED OUT waiting $CHECK_WAIT_MIN min for a free build slot ($CHECK_SLOTS in use)"
-
 deadline=$(($(date +%s) + run_s))
-left() { local s=$((deadline - $(date +%s))); echo $((s > 0 ? s : 1)); }
-# stage_failed <rc> <result> <excerpt-kind>
-stage_failed() {
-    (($1 == 124 || $1 == 137)) && finish 4 "TIMED OUT after $CHECK_TIMEOUT_MIN min" tail
-    [[ -n "${before:-}" && "$(tree_state)" != "$before" ]] && finish 5 "FILES CHANGED during the check; run it again"
-    (($1 == 3)) && finish 3 "SETUP ERROR" tail
-    finish "${4:-1}" "$2" "$3"
-}
-
-# configure: run check_configure; with a CMake preset, take the build directory
-# CMake reports, refuse one outside the worktree (tasks would share a build),
-# and keep it out of Git (info/exclude is shared by all worktrees).
-configure() {
-    run_stage "$(left)" check_configure || stage_failed $? "BUILD FAILED (configure)" build
-    [[ -n "$dir_file" ]] || return 0
-    if [[ -z "$BUILD_DIR" ]]; then
-        BUILD_DIR="$(sed -n 's/^-- Build files have been written to: //p' "$log" | tail -n 1)"
-        BUILD_DIR="$(cd "$BUILD_DIR" 2>/dev/null && pwd -P)" \
-            || finish 3 "SETUP ERROR: CMake did not report the build directory of preset $PRESET" tail
-        case "$BUILD_DIR/" in
-            "$(cd "$top" && pwd -P)"/*) ;;
-            *) finish 3 "SETUP ERROR: preset $PRESET builds outside the worktree ($BUILD_DIR), so tasks would share one build; set its binaryDir under \${sourceDir}" ;;
-        esac
-        echo "$BUILD_DIR" > "$dir_file"
-        export BUILD_DIR
-    fi
-    local rel exclude
-    rel="${BUILD_DIR#"$(cd "$top" && pwd -P)"/}"
-    git -C "$top" check-ignore -q "$rel/CMakeCache.txt" && return 0
-    exclude="$(git -C "$top" rev-parse --path-format=absolute --git-common-dir)/info/exclude"
-    echo "/$rel/" >> "$exclude"
-    log_event "$id" "added /$rel/ to $exclude (build directory of preset $PRESET)"
-}
 
 if [[ "$mode" == prebuild ]]; then
-    configure
-    run_stage "$(left)" check_build || stage_failed $? "BUILD FAILED" build
-    finish 0 "OK, prebuilt"
+    build_preset "${presets[0]}"
+    finish 0 "OK, prebuilt preset ${presets[0]}"
 fi
 
-if [[ ${#lint_only[@]} -gt 0 ]]; then
-    before="$(tree_state)" || setup_error "cannot read the worktree state."
-    run_stage "$(left)" lint_files "${lint_only[@]}" || stage_failed $? "SYNTAX CHECK FAILED (Python/shell files only changed)" tail
-    what="syntax check of ${#lint_only[@]} Python/shell file(s), no build needed"
-else
-    configure
-    # After configure: a new preset build directory is only excluded from Git then.
-    before="$(tree_state)" || setup_error "cannot read the worktree state."
-    run_stage "$(left)" check_build || stage_failed $? "BUILD FAILED" build
-    what="build"
-    if [[ ${#tests[@]} -gt 0 ]]; then
+for p in "${presets[@]}"; do
+    build_preset "$p"
+    if [[ -n "$suite" ]]; then
         rc=0
-        run_stage "$(left)" check_test "${tests[@]}" || rc=$?
-        if ((rc != 0)) && grep -q 'No tests were found' "$log"; then finish 3 "SETUP ERROR: no test matches: ${tests[*]}" tail; fi
-        ((rc == 0)) || stage_failed "$rc" "TESTS FAILED" test 2
-        what="build, tests: ${tests[*]}"
+        run_stage "$suite" "test_$suite" "${tests[@]}" || rc=$?
+        if ((rc != 0)) && [[ "${CHECK_PARSER[$suite]:-}" == ctest ]] && grep -q 'No tests were found' "$stage_out"; then
+            finish 3 "SETUP ERROR: no test in suite $suite matches: ${tests[*]}" generic
+        fi
+        ((rc == 0)) || stage_failed "$rc" "TESTS FAILED (preset $p, suite $suite)" "${CHECK_PARSER[$suite]:-generic}" 2
     fi
-fi
+    exec 9>&-
+done
 [[ "$(tree_state)" == "$before" ]] || finish 5 "FILES CHANGED during the check; run it again"
-finish 0 "OK, $what"
+what="built"
+[[ -n "$suite" ]] && what="built and tested (suite $suite${tests[*]:+: ${tests[*]}})"
+finish 0 "OK, preset$([[ ${#presets[@]} -gt 1 ]] && echo s) ${presets[*]} $what"
