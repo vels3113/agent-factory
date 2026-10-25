@@ -270,6 +270,7 @@ check "draft: default preset" grep -qx 'CHECK_DEFAULT_PRESET=rel' "$draft"
 check "draft: notes all configure presets" grep -q 'configure presets: dev rel' "$draft"
 check "draft kept out of Git" test -z "$(git -C "$MAIN" status --porcelain)"
 check "09 prints the OpenCode prompt" grep -q 'Complete agent-check.draft.conf' "$T/09.out"
+check "prompt: drop the profile's ccache when the repo uses it" grep -q "already use ccache" <(tr -s " \n" " " < "$T/09.out")
 echo '# my edit' >> "$draft"
 "$REPO/bootstrap/09-check-profile.sh" "$P" >/dev/null
 check "09 keeps an existing draft" grep -qx '# my edit' "$draft"

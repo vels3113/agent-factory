@@ -192,7 +192,7 @@ Wrapper settings, overridable in the profile (defaults in [scripts/agent-check.s
 | `CHECK_WAIT_MIN` | 60 | wait for a build slot or for another check of the same preset |
 
 - Build directory: the one the profile's `build_dir` reports (CMake template: the preset's own `binaryDir`, read from CMake's configure output; Make template: the worktree itself). It must lie inside the worktree, or the check stops with exit 3, because tasks would share one build. If Git doesn't ignore it yet, it is added to `main/.git/info/exclude`.
-- The CMake template adds ccache as compiler launcher when ccache is installed; the Make template puts its compiler symlinks first on `PATH`.
+- A new CMake profile adds ccache as compiler launcher when ccache is installed; a new Make profile puts its compiler symlinks first on `PATH`. If the build files already use ccache, the OpenCode prompt removes these lines.
 - A proposal for a result cache, deferred until `checks.tsv` shows repeated checks of the same files: [check-result-cache.md](check-result-cache.md).
 
 ## Tests
