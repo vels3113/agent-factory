@@ -21,6 +21,16 @@ Planning documents and setup scripts for an AI-agent workflow (OpenCode + OpenRo
 - OpenCode is **v2**, pinned to 2.1.3 (docs: https://opencode.ai/v2/docs, not the v1 docs at `/docs/`). v1 and v2 differ in config keys (`agents`, `update`, permission rules), so don't use v1 examples. `setup-guide.md` links to the relevant v2 doc sections; link to the official docs instead of restating their content.
 - Open questions that are still unknown (build system CMake vs. Make, Git server, VM resources) are answered by `vm.env` from `bootstrap/04-vm-facts.sh`. Don't assume them. VS Code runs locally and connects to the VM through Remote-SSH.
 
+## Facts about the VM and the project
+
+These sessions have no access to the VM or the project repo. **Don't ask the user for setup information** (build system, build or test commands, paths, tool versions, VM resources, command output). Instead, write what runs on the VM and finds or uses that information:
+
+- a script: a bootstrap probe like `04-vm-facts.sh` that writes `vm.env`, or detection at run time;
+- instructions in a guide, with commands to run and what to check in their output;
+- a prompt for OpenCode on the VM, like the `/init` prompt in `setup-guide.md` step 7.
+
+Scripts read open values from `vm.env` or `~/<project>/agent.env`, or take them as settings with defaults. If a value is missing, they stop with a message that names the step that provides it. Design for every possible answer, for example both CMake and Make, rather than waiting for one.
+
 ## Script conventions
 
 The bootstrap scripts share these patterns. New scripts (for example the planned `agent-task.sh`, `agent-check.sh` and `jenkins-status.sh` described in `solution.md` section 8) should follow them:
