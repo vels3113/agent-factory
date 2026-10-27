@@ -70,7 +70,10 @@ ledger_header="task_id,date,mode,origin,model,provider,session_id,api_cost_usd,a
 # from journal/<id>.checks.tsv, counting only rows OpenCode ran: agent-check.sh
 # checks (failed: exit 1, 2 or 5) and the build and test commands the plugin
 # wrapped (failed: any non-zero exit). Jenkins rounds stay empty until that
-# script exists.
+# script exists. Cost: what the provider charged, from the plugin's costs.tsv
+# rows for these sessions; a session without rows (no plugin, or a provider
+# that reports no cost) counts with OpenCode's estimate from list prices, and
+# the notes say so.
 ledger_row() {
     local main="$1" wt="$2" ledger="$factory_dir/ledger.csv" sessions
     [[ -s "$ledger" ]] || { echo "No ledger at $ledger; run bootstrap/02-init-ledger.sh." >&2; return 1; }
@@ -86,9 +89,15 @@ for s in json.load(open(sys.argv[1])):
         (cd "$main" && opencode session export --standalone "$sid") > "$sessions/$sid.json"
     done
     rm -f "$sessions/list.json"
-    python3 -I - "$ledger" "$sessions" "$journal_dir/$3.checks.tsv" "$3" "$4" "$5" "$6" "$7" "$8" <<'EOF'
+    python3 -I - "$ledger" "$sessions" "$journal_dir/$3.checks.tsv" "$factory_dir/costs.tsv" "$3" "$4" "$5" "$6" "$7" "$8" <<'EOF'
 import csv, datetime, glob, json, os, sys
-ledger, sdir, tsv, task, mode, origin, human, outcome, notes = sys.argv[1:]
+ledger, sdir, tsv, costs_tsv, task, mode, origin, human, outcome, notes = sys.argv[1:]
+charged = {}  # session -> cost the provider reported, from the plugin
+if os.path.exists(costs_tsv):
+    for line in open(costs_tsv):
+        f = line.rstrip("\n").split("\t")
+        if len(f) >= 7:
+            charged[f[1]] = charged.get(f[1], 0.0) + float(f[6])
 checks, failures = 0, 0  # agent-check.sh checks and wrapped commands OpenCode ran
 if os.path.exists(tsv):
     for line in open(tsv):
@@ -97,12 +106,16 @@ if os.path.exists(tsv):
             checks += 1
             failed = int(f[4]) in (1, 2, 5) if f[2] == "check" else int(f[4]) != 0
             failures += failed
-models, providers, ids, cost, busy, tools = [], [], [], 0.0, [], []
+models, providers, ids, cost, busy, tools, estimated = [], [], [], 0.0, [], [], 0
 for path in sorted(glob.glob(sdir + "/*.json")):
     d = json.load(open(path))
     info = d["info"]
     ids.append(info["id"])
-    cost += info.get("cost") or 0
+    if info["id"] in charged:
+        cost += charged[info["id"]]
+    elif info.get("cost"):
+        cost += info["cost"]
+        estimated += 1
     m = info.get("model") or {}
     if m.get("id") and m["id"] not in models: models.append(m["id"])
     if m.get("providerID") and m["providerID"] not in providers: providers.append(m["providerID"])
@@ -124,10 +137,12 @@ for s, e in sorted(tools):
     else: merged.append([s, e])
 busy_ms = sum(e - s for s, e in busy)
 busy_ms -= sum(max(0, min(e, te) - max(s, ts)) for s, e in busy for ts, te in merged)
+if estimated:
+    notes = (notes + "; " if notes else "") + f"cost: OpenCode estimate for {estimated} of {len(ids)} session(s)"
 row = [task, datetime.date.today().isoformat(), mode, origin, "+".join(models), "+".join(providers),
        " ".join(ids), f"{cost:.4f}", f"{busy_ms / 60000:.1f}", human, checks, failures, "", outcome, notes]
 with open(ledger, "a", newline="") as f: csv.writer(f).writerow(row)
-print(f"Ledger: {len(ids)} session(s), ${cost:.4f}, {busy_ms / 60000:.1f} agent min, "
+print(f"Ledger: {len(ids)} session(s), ${cost:.4f}{' (partly estimated)' if estimated else ''}, {busy_ms / 60000:.1f} agent min, "
       f"{checks} check round(s), {failures} failed.")
 EOF
     rm -rf "$sessions"

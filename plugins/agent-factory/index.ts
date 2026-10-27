@@ -13,8 +13,14 @@
 //   - a journal line with exit code, duration and a link to the log
 //   - a row in journal/<task-id>.checks.tsv (kind "command") for the ledger
 // Only agent tool calls are wrapped: your own `!` commands in the TUI create
-// shells too, but without a tool call before them. OpenCode 2.1.3 behavior
-// this relies on is checked in tests/task-workflow.sh.
+// shells too, but without a tool call before them.
+// Costs: OpenCode records its own estimate from list prices, not what
+// OpenRouter charged. The plugin reads each model response's usage report and,
+// when it has a cost (OpenRouter's usage accounting, which OpenCode requests),
+// appends a row to costs.tsv: time, session, agent, kind (primary, title, ...),
+// provider/model, generation ID, cost in USD, prompt and completion tokens.
+// agent-task.sh done sums these rows for the ledger.
+// OpenCode 2.1.3 behavior this relies on is checked in tests/task-workflow.sh.
 import { Plugin } from "@opencode/plugin"
 import { spawnSync } from "node:child_process"
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
@@ -49,6 +55,23 @@ const pad = (n: number) => String(n).padStart(2, "0")
 const stamp = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 const fileStamp = (d: Date) => `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`
 const duration = (ms: number) => { const s = Math.round(ms / 1000); return `${Math.floor(s / 60)}m${pad(s % 60)}s` }
+
+// The response ID and the last usage report in a model response: a JSON body,
+// or a stream of "data: {...}" lines whose last chunk carries the usage.
+function usageOf(body: string): { id?: string; usage?: any } {
+  let id: string | undefined
+  let usage: any
+  const take = (text: string) => {
+    try {
+      const o = JSON.parse(text)
+      if (typeof o?.id === "string") id ??= o.id
+      if (o?.usage) usage = o.usage
+    } catch {}
+  }
+  if (body.trimStart().startsWith("{")) take(body)
+  else for (const line of body.split("\n")) if (line.startsWith("data:") && !line.includes("[DONE]")) take(line.slice(5))
+  return { id, usage }
+}
 
 function matches(command: string, prefixes: string[]): boolean {
   return command.split(/&&|\|\||[;|\n]/).some((part) => {
@@ -114,6 +137,22 @@ export default Plugin.define({
       appendFileSync(join(journal, `${r.task}.checks.tsv`),
         [Math.floor(r.started / 1000), Math.floor(end.getTime() / 1000), "command", "", data.exit, r.sessionID, ""].join("\t") + "\n")
     }
+    // What the provider charged. A copy of the response is read in the
+    // background: OpenCode waits for its hooks, so awaiting here would hold
+    // back the streamed answer.
+    await ctx.session.hook("http.response", (event: any) => {
+      if (typeof event.response?.clone !== "function") return
+      const time = Math.floor(Date.now() / 1000)
+      const model = `${event.model?.providerID ?? ""}/${event.model?.id ?? ""}`
+      event.response.clone().text().then((body: string) => {
+        const { id, usage } = usageOf(body)
+        if (typeof usage?.cost !== "number") return
+        mkdirSync(factoryDir, { recursive: true })
+        appendFileSync(join(factoryDir, "costs.tsv"), [time, event.sessionID, event.agent ?? "", event.kind ?? "", model,
+          id ?? "", usage.cost, usage.prompt_tokens ?? "", usage.completion_tokens ?? ""].join("\t") + "\n")
+      }).catch((err: unknown) => console.error("agent-factory plugin: response cost:", err))
+    })
+
     // Approval waits: stub, see proposal-approval-waits.md.
     const permission = (_event: any) => {}
 

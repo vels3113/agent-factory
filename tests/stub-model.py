@@ -45,7 +45,8 @@ class Handler(BaseHTTPRequestHandler):
             message, finish = {"role": "assistant", "content": None, "tool_calls": [call]}, "tool_calls"
         else:
             message, finish = {"role": "assistant", "content": step["text"]}, "stop"
-        usage = {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+        # cost: the charge, as OpenRouter's usage accounting reports it.
+        usage = {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2, "cost": 0.01}
         if not req.get("stream"):
             self.send(200, json.dumps({"id": "stub", "object": "chat.completion", "created": 0, "model": "stub",
                                        "choices": [{"index": 0, "message": message, "finish_reason": finish}],

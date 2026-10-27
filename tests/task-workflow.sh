@@ -256,6 +256,10 @@ printf '1\t2\tcheck\tdev\t0\tses_a\tt\n3\t4\tcommand\t\t3\tses_a\t\n5\t6\tcomman
 check_eq "ledger: only the worktree's session" "ses_a" "$(ledger_field -1 6)"
 check_eq "ledger: agent minutes count wake-ups, not tool calls" "3.0" "$(ledger_field -1 8)"
 check_eq "ledger: checks and wrapped commands as rounds, a non-zero command exit fails" "2 1" "$(ledger_field -1 10) $(ledger_field -1 11)"
+check_eq "ledger: no plugin cost rows: OpenCode's estimate, noted" "0.1000 cost: OpenCode estimate for 1 of 1 session(s)" "$(ledger_field -1 7) $(ledger_field -1 14)"
+printf '1\tses_a\tbuild\tprimary\topenrouter/vendor/m\tgen-1\t0.2\t10\t5\n2\tses_a\ttitle\ttitle\topenrouter/vendor/m\tgen-2\t0.05\t3\t1\n3\tses_b\tbuild\tprimary\topenrouter/vendor/m\tgen-3\t9\t1\t1\n' >> "$HOME/.agent-factory/costs.tsv"
+(PATH="$fake/bin:$PATH" ledger_row "$MAIN" "$P/worktrees/TASK-9" TASK-9 interactive new 5 accepted "") >/dev/null
+check_eq "ledger: the provider's charge from the plugin's rows, this task's sessions only" "0.2500 " "$(ledger_field -1 7) $(ledger_field -1 14)"
 
 echo "# plugin: agents' build and test commands"
 # plugins/agent-factory with a stand-in model (tests/stub-model.py) that runs
@@ -281,6 +285,10 @@ wait_for 5 test -s "$wt5/.agent/check/prebuild.pid"
 stub_run "$wt5" '[{"tool": "shell", "args": {"command": "build-stub"}}]'
 check "wrapped command stops the running prebuild" grep -q 'prebuild dev: STOPPED for command `build-stub`' "$journal/TASK-5.md"
 check "prebuild gone before the command finished" bash -c "! pgrep -f 'agent-check[.]sh --prebuild'"
+check "costs.tsv: the charge of each response, agent and title requests" bash -c "awk -F'\t' '\$4 == \"primary\" && \$7 == 0.01 { p = 1 } \$4 == \"title\" && \$7 == 0.01 { t = 1 } END { exit !(p && t) }' '$HOME/.agent-factory/costs.tsv'"
+# The ledger sums costs.tsv by session (tested above with fake sessions); here:
+# the rows carry the real session IDs, the same ones as the command rows.
+check "costs.tsv: rows for the sessions that ran the wrapped commands" bash -c "cut -f 6 '$journal/TASK-5.checks.tsv' | grep '^ses_' | sort -u | while read -r s; do grep -qP \"^\\d+\\t\$s\\t\" '$HOME/.agent-factory/costs.tsv' || exit 1; done"
 git -C "$MAIN" worktree remove --force "$wt5"
 
 echo "# CMake profile from 09-check-profile.sh"
