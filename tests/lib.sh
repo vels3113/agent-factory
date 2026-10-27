@@ -36,7 +36,9 @@ install_opencode() {
     echo "$bin"
 }
 
-# sandbox: fresh HOME and PATH. $T/bin comes first and holds test stubs: an
+# sandbox: fresh HOME and PATH, and no XDG_* base directories: OpenCode follows
+# them, so a runner's XDG_CONFIG_HOME (GitHub Actions sets one) would hide the
+# sandbox's global config. $T/bin comes first and holds test stubs: an
 # `opencode` that stands in for the interactive UI (writes a report, exits) and
 # passes every subcommand to the real binary. STUB_SESSION_SECONDS keeps the
 # stub session open that long (default 0).
@@ -50,7 +52,7 @@ sandbox() {
         trap 'opencode service stop >/dev/null 2>&1; stop_stub_model; rm -rf "$T"' EXIT
     fi
     export HOME="$T/home" AGENT_PROJECTS_DIR="$T/projects"
-    unset AGENT_FACTORY_DIR AGENT_SECRETS_DIR
+    unset AGENT_FACTORY_DIR AGENT_SECRETS_DIR XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME XDG_STATE_HOME
     mkdir -p "$HOME/.config/opencode" "$T/bin" "$AGENT_PROJECTS_DIR"
     echo '{ "update": "disable" }' > "$HOME/.config/opencode/opencode.jsonc"
     git config --global user.name "Agent Test"
