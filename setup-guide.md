@@ -97,7 +97,7 @@ OpenCode's built-in `/init` ("guided AGENTS.md setup"; not yet in the v2 docs) r
 4. Run, as one line:
 
    ```text
-   /init Keep the Rules section of the existing AGENTS.md unchanged. Fill the Codebase map and Build and test sections. Start from ~/.agent-factory/repo-overview.txt if it exists. This is a large C++/C/flex repo: name the build output directories, the generated lexer .c files and their .l sources, and the main build and test commands CI runs. Agents build and test only through agent-check.sh, so describe those commands as what agent-check.sh runs, not as commands for agents. List the configure presets in CMakePresets.json with their binaryDir pattern. Keep the codebase map under 20 lines.
+   /init Keep the Rules section of the existing AGENTS.md unchanged. Fill the Codebase map and Build and test sections. Start from ~/.agent-factory/repo-overview.txt if it exists. This is a large C++/C/flex repo: name the build output directories, the generated lexer .c files and their .l sources, how to build one target, and how to run one test. List the configure presets in CMakePresets.json with their binaryDir pattern. Keep the codebase map under 20 lines.
    ```
 
 5. Review the result; fix it by hand if needed.
@@ -105,7 +105,7 @@ OpenCode's built-in `/init` ("guided AGENTS.md setup"; not yet in the v2 docs) r
 7. Fill these placeholders in `~/<project>/opencode.jsonc`:
    - `TODO_BUILD_DIR`: the presets' `binaryDir` pattern from `AGENTS.md`, for example `*/build/*` for `${sourceDir}/build/${presetName}`. For Make, the build output directories it names.
    - The generated-file patterns: from `AGENTS.md`.
-   - `TODO_BUILD_COMMAND`, `TODO_TEST_COMMAND`: the commands that build and run tests, from `AGENTS.md`, one deny rule each, more rules for more commands. Agents then get these refused instead of reaching your approval prompt, and use `agent-check.sh`. For example, for CMake: `cmake --build *` and `ctest *`.
+   - `TODO_BUILD_COMMAND`, `TODO_TEST_COMMAND` in the plugin's `commands` option: the commands that configure, build and run tests, from `AGENTS.md`, as prefixes, for example `"cmake"` and `"ctest"`. Add more prefixes for more commands (step 8).
    - Model lines: commented out until models are chosen (step 10); until then agents use the model picked with `/models`.
 
 ## 8. Task workflow
@@ -124,7 +124,7 @@ bootstrap/08-task-workflow.sh ~/<project> lemon
 
 - Writes `BASE_BRANCH` to `~/<project>/agent.env`; adds `.agent/` to `main/.git/info/exclude`; links `agent-task.sh`, `agent-check.sh` and `model-suggest.sh` (step 10) into `~/.local/bin`.
 - Registers [scripts/agent-worktree-setup.sh](scripts/agent-worktree-setup.sh) as OpenCode's project start command. OpenCode runs it in every worktree it creates, whether you, the script or an agent asked for it. It moves the worktree from a detached HEAD to `agent/<task-id>` (from `origin/<base>`, no upstream) and rejects names that are not task IDs or unallocated `VM-<n>` IDs.
-- A layout created before this step needs `"worktree": { "directory": "../worktrees" }` in `~/<project>/opencode.jsonc` (see [templates/opencode.jsonc](templates/opencode.jsonc)); the script warns if it is missing.
+- A layout created before this step needs `"worktree": { "directory": "../worktrees" }` and the `"plugins"` entry for `plugins/agent-factory` in `~/<project>/opencode.jsonc` (see [templates/opencode.jsonc](templates/opencode.jsonc)); the script warns if either is missing.
 
 Then set up the check profile (step 9).
 
@@ -139,10 +139,23 @@ agent-task.sh list                                  # journal index
 ```
 
 - `done` refuses when the worktree has uncommitted changes and keeps the branch if it has commits on no remote.
-- `done` writes the task's row to the ledger (step 2). It asks for origin, your hands-on minutes, outcome and notes. It fills model, provider, session IDs, cost and agent minutes from the OpenCode sessions that ran in the worktree, and the check rounds and failed rounds from the checks OpenCode ran. Jenkins rounds stay empty until that script exists. Agent minutes are the model's working time: from each prompt, or each wake-up when a background command finishes, to idle, minus the time inside tool calls. In OpenCode 2.1.3 a tool call's time includes the wait at its approval prompt, so your approval waits and the commands' run times are not counted. The cost is OpenCode's figure; the OpenRouter Activity page is authoritative. Build time and disk use are not model data, so they go to the task journal: one line per check or prebuild with its duration, and the worktree's disk use at `done`.
+- `done` writes the task's row to the ledger (step 2). It asks for origin, your hands-on minutes, outcome and notes. It fills model, provider, session IDs, cost and agent minutes from the OpenCode sessions that ran in the worktree, and the check rounds and failed rounds from the wrapped commands and checks OpenCode ran. Jenkins rounds stay empty until that script exists. Agent minutes are the model's working time: from each prompt, or each wake-up when a background command finishes, to idle, minus the time inside tool calls. In OpenCode 2.1.3 a tool call's time includes the wait at its approval prompt, so your approval waits and the commands' run times are not counted. The cost is OpenCode's figure; the OpenRouter Activity page is authoritative. Build time and disk use are not model data, so they go to the task journal: one line per wrapped command, check or prebuild with its duration, and the worktree's disk use at `done`.
 - Agents can start another task themselves with OpenCode's `worktree_create` and `session_move` tools (see [templates/AGENTS.md](templates/AGENTS.md)); the start command applies the same rules.
 
-Local check (`agent-check.sh`, run inside a task worktree; what it runs comes from the check profile, step 9):
+Agents' builds and tests: agents run the repo's own build and test commands from `AGENTS.md`, as OpenCode background commands (OpenCode 2.1.3 stops foreground shell commands after 2 minutes, a fixed default that no setting changes). The plugin [plugins/agent-factory](plugins/agent-factory/index.ts), loaded from `~/<project>/opencode.jsonc`, wraps the commands listed in its options; design and OpenCode behavior in [ADR 0001](adr/0001-plugin-wraps-agent-commands.md):
+
+```jsonc
+"plugins": [{ "package": "<this repo>/plugins/agent-factory",
+              "options": { "commands": ["cmake", "ctest"],
+                           "env": { "CMAKE_C_COMPILER_LAUNCHER": "ccache", "CMAKE_CXX_COMPILER_LAUNCHER": "ccache" } } }]
+```
+
+- `commands`: a command is wrapped when any part of it (split at `&&`, `||`, `;`, `|`) starts with one of these prefixes, so `cd build && ctest -R x` matches `"ctest"`. Only agents' tool calls are wrapped, not your own `!` commands.
+- `env`: environment variables set for the wrapped commands only. The commands themselves run unchanged. `${VAR}` in a value is the command's current value.
+- Per wrapped command in a task worktree: the full output in `reports/<task-id>/commands/`, a journal line with exit code and duration that links it, and a `checks.tsv` row for the ledger. The agent gets OpenCode's own result: the last 2,000 lines of output and the path of the full output.
+- Not yet: build slots and low priority for these commands ([proposal-build-slots.md](proposal-build-slots.md)); approval waits ([proposal-approval-waits.md](proposal-approval-waits.md)).
+
+Prebuild (`agent-check.sh`, from the check profile, step 9): `agent-task.sh start` runs `agent-check.sh --prebuild` for the default preset in the background while the session is open, so the agent's first build is incremental; it stops the prebuild when the session ends. The prebuild never holds up the session's own work: a check that needs a build, or a build or test command the plugin wraps, stops a running prebuild of its worktree and runs at once, since it is usually much shorter and both would build in the same build directory. The prebuild's journal line names what stopped it. You can run `agent-check.sh` in a task worktree yourself:
 
 ```bash
 agent-check.sh [--preset <name>]... [--suite <name>] [<test>...]   # build the presets, run the named tests
@@ -150,20 +163,18 @@ agent-check.sh --prebuild [--preset <name>]                        # configure a
 agent-check.sh --list                                              # presets, test suites, tests
 ```
 
-- `agent-task.sh start` runs `--prebuild` for the default preset in the background while the session is open, so the agent's first check finds a warm build; it stops the prebuild when the session ends. A check of the same preset waits for it.
-- Agents run it as an OpenCode background command (see [templates/AGENTS.md](templates/AGENTS.md)): OpenCode 2.1.3 stops foreground shell commands after 2 minutes, a fixed default that no setting changes.
 - Short output: the first 5 compiler, flex, linker or CMake errors with their context, or the failing tests with the end of their output; the full log is in `.agent/check/`. Exit codes: 0 passed, 1 build failed, 2 tests failed, 3 setup error, 4 timed out or no free build slot, 5 files changed during the check.
 - Diff filter: no changes against `origin/<base>` passes without building. Changed Python and shell files get a syntax check; the build runs only if a changed file matches the profile's `CHECK_BUILD_PATHS`. Several `--preset` options build one preset after the other and stop at the first failure.
-- Builds run at low CPU and I/O priority, in at most `CHECK_SLOTS` checks at once on the VM.
+- Builds run at low CPU and I/O priority, in at most `CHECK_SLOTS` checks at once on the VM. Two checks of the same preset in one worktree run one after the other. Only the prebuild that `agent-task.sh start` runs is stopped for a check. If you run `agent-check.sh --prebuild` yourself in a terminal, a check of the same preset waits until it finishes: the scripts can't stop that prebuild's compiler processes without also closing your terminal.
 
 Journal and reports (under `~/.agent-factory/`):
 
-- `journal/index.md`: one row per task (source Taiga/local, parent, title, status). `journal/<task-id>.md`: append-only events, written only by scripts. `journal/<task-id>.checks.tsv`: one row per `agent-check.sh` run (start, end, kind, presets, exit code, OpenCode session, tree hash of the checked files), read by `done` for the ledger.
+- `journal/index.md`: one row per task (remote/local, parent, title, status). `journal/<task-id>.md`: append-only events, written only by scripts. `journal/<task-id>.checks.tsv`: one row per `agent-check.sh` run (start, end, kind, presets, exit code, OpenCode session, tree hash of the checked files) and per wrapped command (kind `command`, without presets and tree hash), read by `done` for the ledger.
 - Agents write `.agent/report.md` in their worktree. When the session ends (and on `done`), the script moves it to `reports/<task-id>/<timestamp>-<label>.md` and links it from the task's journal.
 
 ## 9. Check profile
 
-`agent-check.sh` is a generic wrapper; the profile `~/<project>/agent-check.conf` describes this repo's CI procedure in its terms: the presets CI builds, how to configure and build one, the test suites and how to run named tests, an output parser per step, and the files whose change needs a build. It is sourced bash; its header describes the interface. Agents may not edit it.
+`agent-check.sh` is a generic wrapper, used for the prebuild and by you (step 8); the profile `~/<project>/agent-check.conf` describes this repo's CI procedure in its terms: the presets CI builds, how to configure and build one, the test suites and how to run named tests, an output parser per step, and the files whose change needs a build. It is sourced bash; its header describes the interface. Agents may not edit it.
 
 1. Draft it (run after step 8):
 
@@ -213,7 +224,7 @@ model-suggest.sh
 
 Using a suggestion:
 
-1. Smoke-test an untested model before you put it in the config. The printed `AGENT_TEST_MODEL=openrouter/<id> tests/run.sh --model` does not work yet for OpenRouter models, because the test sandbox has no OpenRouter key. Until it does, try the model by hand on one small task: `/models` in `opencode`, then one edit, `agent-check.sh` and fix round.
+1. Smoke-test an untested model before you put it in the config. The printed `AGENT_TEST_MODEL=openrouter/<id> tests/run.sh --model` does not work yet for OpenRouter models, because the test sandbox has no OpenRouter key. Until it does, try the model by hand on one small task: `/models` in `opencode`, then one edit, build and fix round.
 2. Paste the lines into the `agents` section of `~/<project>/opencode.jsonc`, replacing the commented-out model lines; add `#<variant>` for a reasoning effort (https://opencode.ai/v2/docs/models/#variants). Anthropic models appear in the list; the plan excludes them by default (solution.md section 3).
 3. Check that the "current" lines now show the chosen models: `model-suggest.sh | grep current`.
 

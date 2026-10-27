@@ -70,7 +70,8 @@ start_task() {
         [[ -d "$wt" ]] || { echo "Unexpected worktree location: $out" >&2; exit 1; }
     fi
     echo "Task $id: $wt (branch $(git -C "$wt" branch --show-current))"
-    # Prebuild while the agent starts working; stopped when the session ends.
+    # Prebuild while the agent starts working; stopped when the session ends, or
+    # earlier by the session's first check or wrapped build command.
     # Own session (setsid), so pkill -s also reaches the build processes.
     local prebuild
     (cd "$wt" && exec setsid "$here/agent-check.sh" --prebuild) </dev/null >/dev/null 2>&1 &

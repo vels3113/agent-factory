@@ -12,12 +12,10 @@ Instructions for AI agents working in this repository. Permissions are enforced 
 
 ## Build and test
 
-<!-- TODO: build system, build directory, and the main build and test commands CI runs. agent-check.sh wraps them: describe them as what agent-check.sh runs, not as commands for agents. -->
+<!-- TODO: build system, build directory, how to build one target, how to run one test. -->
 
-- Build and test only through `agent-check.sh`, never by calling the build tool or test runner yourself. This includes building a binary to run by hand: `agent-check.sh --prebuild` builds the default preset in your worktree.
-- Check your change with `agent-check.sh` only: `agent-check.sh [--preset <name>]... [--suite <name>] [<test>...]`. It builds incrementally (the default preset unless you name presets) and runs the tests you name, with short output (first errors, failing tests) and the path of the full log. `agent-check.sh --list` shows the presets CI builds, the test suites and their tests. It is on `PATH`: run it as `agent-check.sh`, not `./agent-check.sh`.
-- Run it as a background shell command (`background: true`). Don't edit files until its result arrives.
-- Exit codes: 0 passed, 1 build failed, 2 tests failed, 5 files changed during the check (run it again). 3 (setup error) or 4 (timed out, or no free build slot): report it and stop, don't change code to work around it.
+- Run builds and tests as background shell commands (`background: true`): foreground commands stop after 2 minutes. Don't edit files until the result arrives. The result shows the end of the output and the path of the full output.
+- A prebuild of your worktree starts with the session. Your first build or test command stops it if it is still running and builds incrementally from there.
 - Do not run a full build or the full test suite unless the task asks for it.
 
 ## Rules
@@ -25,7 +23,7 @@ Instructions for AI agents working in this repository. Permissions are enforced 
 - Lexers: edit the flex sources (`.l`); the build regenerates the lexer `.c` files.
 - Never query or wait for Jenkins. CI runs after you finish.
 - Never change the Git identity or Git config (no `git config`, no `git -c user.*`). If a commit fails, report the error and stop.
-- Keep changes within the task's scope. Commit when `agent-check.sh` passes, then stop.
+- Keep changes within the task's scope. Commit when the build and the tests for your change pass, then stop.
 - If you are blocked or the task is unclear, say so and stop instead of guessing.
 
 ## Tasks and reports

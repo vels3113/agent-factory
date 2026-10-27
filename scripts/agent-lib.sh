@@ -66,9 +66,11 @@ ledger_header="task_id,date,mode,origin,model,provider,session_id,api_cost_usd,a
 # the OpenCode sessions that ran in the worktree. Agent minutes are the model's
 # working time: from each prompt or background-command wake-up to idle, minus
 # the time inside tool calls. In 2.1.3 a tool call's time includes the wait at
-# its approval prompt, so the human's wait is never counted. Check rounds and
-# failures (exit 1, 2 or 5) come from journal/<id>.checks.tsv, counting only the
-# checks OpenCode ran. Jenkins rounds stay empty until that script exists.
+# its approval prompt, so the human's wait is never counted. Check rounds come
+# from journal/<id>.checks.tsv, counting only rows OpenCode ran: agent-check.sh
+# checks (failed: exit 1, 2 or 5) and the build and test commands the plugin
+# wrapped (failed: any non-zero exit). Jenkins rounds stay empty until that
+# script exists.
 ledger_row() {
     local main="$1" wt="$2" ledger="$factory_dir/ledger.csv" sessions
     [[ -s "$ledger" ]] || { echo "No ledger at $ledger; run bootstrap/02-init-ledger.sh." >&2; return 1; }
@@ -87,12 +89,14 @@ for s in json.load(open(sys.argv[1])):
     python3 -I - "$ledger" "$sessions" "$journal_dir/$3.checks.tsv" "$3" "$4" "$5" "$6" "$7" "$8" <<'EOF'
 import csv, datetime, glob, json, os, sys
 ledger, sdir, tsv, task, mode, origin, human, outcome, notes = sys.argv[1:]
-checks = []  # exit codes of the checks OpenCode ran
+checks, failures = 0, 0  # agent-check.sh checks and wrapped commands OpenCode ran
 if os.path.exists(tsv):
     for line in open(tsv):
         f = line.rstrip("\n").split("\t")
-        if len(f) >= 6 and f[2] == "check" and f[5]:
-            checks.append(int(f[4]))
+        if len(f) >= 6 and f[2] in ("check", "command") and f[5]:
+            checks += 1
+            failed = int(f[4]) in (1, 2, 5) if f[2] == "check" else int(f[4]) != 0
+            failures += failed
 models, providers, ids, cost, busy, tools = [], [], [], 0.0, [], []
 for path in sorted(glob.glob(sdir + "/*.json")):
     d = json.load(open(path))
@@ -120,12 +124,11 @@ for s, e in sorted(tools):
     else: merged.append([s, e])
 busy_ms = sum(e - s for s, e in busy)
 busy_ms -= sum(max(0, min(e, te) - max(s, ts)) for s, e in busy for ts, te in merged)
-failures = sum(1 for c in checks if c in (1, 2, 5))
 row = [task, datetime.date.today().isoformat(), mode, origin, "+".join(models), "+".join(providers),
-       " ".join(ids), f"{cost:.4f}", f"{busy_ms / 60000:.1f}", human, len(checks), failures, "", outcome, notes]
+       " ".join(ids), f"{cost:.4f}", f"{busy_ms / 60000:.1f}", human, checks, failures, "", outcome, notes]
 with open(ledger, "a", newline="") as f: csv.writer(f).writerow(row)
 print(f"Ledger: {len(ids)} session(s), ${cost:.4f}, {busy_ms / 60000:.1f} agent min, "
-      f"{len(checks)} check round(s), {failures} failed.")
+      f"{checks} check round(s), {failures} failed.")
 EOF
     rm -rf "$sessions"
 }

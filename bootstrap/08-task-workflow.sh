@@ -7,6 +7,8 @@
 #   - main/.git/info/exclude: .agent/ (agent reports stay out of Git)
 #   - ~/.local/bin: links to agent-task.sh, agent-check.sh, agent-worktree-setup.sh and model-suggest.sh
 #   - the agent task journal under ~/.agent-factory/journal
+#   - warns when <project>/opencode.jsonc lacks the worktree directory or the
+#     plugins/agent-factory entry (layouts created before they existed)
 # Usage: 08-task-workflow.sh <project-dir> <base-branch>
 set -euo pipefail
 
@@ -74,4 +76,6 @@ init_journal
 echo "Journal: $index"
 grep -q '"worktree"' "$project_dir/opencode.jsonc" 2>/dev/null \
     || echo "WARNING: add \"worktree\": { \"directory\": \"../worktrees\" } to $project_dir/opencode.jsonc (see templates/opencode.jsonc)." >&2
+grep -q 'plugins/agent-factory' "$project_dir/opencode.jsonc" 2>/dev/null \
+    || echo "WARNING: add the \"plugins\" entry for $(cd "$scripts/../plugins/agent-factory" && pwd) to $project_dir/opencode.jsonc (see templates/opencode.jsonc)." >&2
 echo "Next: agent-task.sh start TASK-<n>"

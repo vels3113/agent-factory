@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# Local check for agents: runs the project's CI procedure as its check profile
-# describes it (<project>/agent-check.conf, from bootstrap/09-check-profile.sh),
-# for one or more presets, and adds what agents need: short output (first
-# errors, failing tests), no build when the change doesn't need one, a
-# prebuild, VM-wide build slots, low priority, time limits, and logs.
-# Agents run it as an OpenCode background command: OpenCode 2.1.3 stops
-# foreground shell commands after 2 minutes.
+# Local check: runs the project's CI procedure as its check profile describes
+# it (<project>/agent-check.conf, from bootstrap/09-check-profile.sh), for one
+# or more presets, with short output (first errors, failing tests), no build
+# when the change doesn't need one, a prebuild, VM-wide build slots, low
+# priority, time limits, and logs. agent-task.sh start runs the prebuild; you
+# run checks. Agents build with the repo's own commands, which the plugin
+# wraps (adr/0001-plugin-wraps-agent-commands.md).
+# A check that needs a build stops a running prebuild of its worktree started
+# by agent-task.sh (in its own session), instead of waiting for it: the check
+# is usually much shorter. The plugin does the same for the agents' commands.
 # Usage:
 #   agent-check.sh [--preset <name>]... [--suite <name>] [<test>...]
 #       build each preset (default: the profile's), then run the named tests
@@ -153,6 +156,7 @@ tree_state() {
 finish() {
     trap - TERM INT
     local secs=$(($(date +%s) - t0)) tree="${before:-}"
+    [[ "$mode" == prebuild ]] && rm -f "$checks/prebuild.pid" "$checks/prebuild.stop"
     [[ -n "$tree" ]] || tree="$(tree_state)" || tree=""
     echo "agent-check: $2 ($(fmt_secs "$secs"))"
     [[ -n "${3:-}" ]] && excerpt "$3"
@@ -163,7 +167,14 @@ finish() {
     log_event "$id" "$label: $2, $(fmt_secs "$secs")${timings:+ ($timings)}"
     exit "$1"
 }
-trap 'finish 4 "STOPPED by a signal"' TERM INT
+# A prebuild stopped for a check names it (prebuild.stop, written by the check
+# or the plugin).
+stopped_by() {
+    local by
+    [[ "$mode" == prebuild ]] && by="$(cat "$checks/prebuild.stop" 2>/dev/null)" && [[ -n "$by" ]] \
+        && echo "for $by" || echo "by a signal"
+}
+trap 'finish 4 "STOPPED $(stopped_by)"' TERM INT
 
 # excerpt compiler|ctest|pytest|generic: the part of the last step's output
 # worth reading, at most 50 lines.
@@ -316,6 +327,27 @@ if [[ "$mode" == check && -z "$suite" ]]; then
         done
     fi
     ((need_build)) || finish 0 "OK, no build needed: ${#changed[@]} changed file(s), none in CHECK_BUILD_PATHS${scripts:+; syntax check passed}"
+fi
+
+# Prebuild and checks of one worktree: a prebuild in its own session (started
+# by agent-task.sh with setsid) registers in prebuild.pid; a check stops it,
+# with all its build processes, and goes on once it has exited. A prebuild in
+# your terminal's session doesn't register (stopping its session would close
+# the terminal); a check of the same preset then waits for it.
+stop_prebuild() {
+    local sid i
+    sid="$(cat "$checks/prebuild.pid" 2>/dev/null)" || return 0
+    [[ "$sid" =~ ^[0-9]+$ ]] && kill -0 "$sid" 2>/dev/null || { rm -f "$checks/prebuild.pid"; return 0; }
+    echo "$label" > "$checks/prebuild.stop"
+    pkill -TERM -s "$sid" 2>/dev/null || true
+    for ((i = 0; i < 100; i++)); do kill -0 "$sid" 2>/dev/null || break; sleep 0.1; done
+    log_event "$id" "$label: stopped the running prebuild"
+}
+if [[ "$mode" == prebuild ]]; then
+    rm -f "$checks/prebuild.stop"
+    [[ "$(ps -o sid= -p $$ | tr -d ' ')" == "$$" ]] && echo $$ > "$checks/prebuild.pid"
+elif [[ "$mode" == check ]]; then
+    stop_prebuild
 fi
 
 # Lower priority than interactive work; inherited by every build process.

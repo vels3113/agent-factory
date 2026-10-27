@@ -62,7 +62,8 @@ if [[ -e "$config" ]]; then
     echo "Kept existing $config."
 else
     content="$(<"$templates/opencode.jsonc")"
-    printf '%s\n' "${content//TODO_INSTRUCTIONS_PATH/$agents_md}" > "$config"
+    content="${content//TODO_INSTRUCTIONS_PATH/$agents_md}"
+    printf '%s\n' "${content//TODO_PLUGIN_PATH/$(cd "$templates/../plugins/agent-factory" && pwd)}" > "$config"
     echo "Created $config."
 fi
 

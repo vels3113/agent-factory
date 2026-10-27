@@ -45,9 +45,9 @@ sandbox() {
     oc_bin="$(install_opencode)" || { echo "Cannot install OpenCode $OC_VERSION" >&2; exit 2; }
     T="$(mktemp -d)"
     if [[ "${KEEP:-}" == 1 ]]; then
-        trap 'opencode service stop >/dev/null 2>&1' EXIT
+        trap 'opencode service stop >/dev/null 2>&1; stop_stub_model' EXIT
     else
-        trap 'opencode service stop >/dev/null 2>&1; rm -rf "$T"' EXIT
+        trap 'opencode service stop >/dev/null 2>&1; stop_stub_model; rm -rf "$T"' EXIT
     fi
     export HOME="$T/home" AGENT_PROJECTS_DIR="$T/projects"
     unset AGENT_FACTORY_DIR AGENT_SECRETS_DIR
@@ -86,3 +86,35 @@ make_layout() {
 
 # oc_api <args...>: `opencode api` against a private server, run from main/.
 oc_api() { (cd "$MAIN" && timeout "$OC_TIMEOUT" opencode api --standalone "$@"); }
+
+# stub_model: start tests/stub-model.py and add it to the global config as
+# provider "stub" (model stub/stub), so sessions make scripted tool calls
+# without a real model.
+stub_model() {
+    mkdir -p "$T/stub"
+    python3 -I "$REPO/tests/stub-model.py" "$T/stub" >/dev/null 2>&1 &
+    echo $! > "$T/stub/pid"
+    local i
+    for i in $(seq 50); do [[ -s "$T/stub/port" ]] && break; sleep 0.1; done
+    cat > "$HOME/.config/opencode/opencode.jsonc" <<EOF
+{
+  "update": "disable",
+  "providers": {
+    "stub": {
+      "name": "Stub",
+      "package": "@opencode/ai/providers/openai-compatible",
+      "settings": { "baseURL": "http://127.0.0.1:$(cat "$T/stub/port")/v1", "apiKey": "stub" },
+      "models": { "stub": { "name": "Stub" } }
+    }
+  }
+}
+EOF
+}
+stop_stub_model() { [[ -s "$T/stub/pid" ]] && kill "$(cat "$T/stub/pid")" 2>/dev/null; return 0; }
+# stub_run <dir> <steps-json>: one session in <dir> whose model makes these tool
+# calls (tests/stub-model.py), permissions approved. Stdin must not be a pipe or
+# terminal: `opencode run` would wait for it. Output in $T/stub/run.out.
+stub_run() {
+    echo "$2" > "$T/stub/script.json"
+    (cd "$1" && timeout "$OC_TIMEOUT" opencode run --standalone --auto -m stub/stub go) < /dev/null > "$T/stub/run.out" 2>&1
+}

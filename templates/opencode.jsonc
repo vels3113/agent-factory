@@ -18,18 +18,30 @@
   // puts them on branch agent/<task-id>.
   "worktree": { "directory": "../worktrees" },
 
+  // plugins/agent-factory wraps the agents' build and test commands: they run
+  // unchanged, with "env" set; each run is logged in the task journal with its
+  // full output (setup-guide.md step 8). TODO: the commands that build and run
+  // tests, from AGENTS.md (filled by /init), as prefixes, e.g. "cmake" (also
+  // covers configuring) and "ctest". If ccache is installed, add it to "env":
+  // CMAKE_C_COMPILER_LAUNCHER and CMAKE_CXX_COMPILER_LAUNCHER set to "ccache"
+  // (CMake), or "PATH": "/usr/lib/ccache:${PATH}" (Make).
+  "plugins": [
+    {
+      "package": "TODO_PLUGIN_PATH",
+      "options": { "commands": ["TODO_BUILD_COMMAND", "TODO_TEST_COMMAND"], "env": {} },
+    },
+  ],
+
   // Rules apply in order; the last match wins.
   "permissions": [
     { "action": "edit", "resource": "*", "effect": "ask" },
     { "action": "shell", "resource": "*", "effect": "ask" },
 
-    // Read-only commands and the local check run without prompting.
+    // Read-only commands run without prompting.
     { "action": "shell", "resource": "git status *", "effect": "allow" },
     { "action": "shell", "resource": "git diff *", "effect": "allow" },
     { "action": "shell", "resource": "git log *", "effect": "allow" },
     { "action": "shell", "resource": "git show *", "effect": "allow" },
-    { "action": "shell", "resource": "agent-check.sh", "effect": "allow" },
-    { "action": "shell", "resource": "agent-check.sh *", "effect": "allow" },
     { "action": "shell", "resource": "agent-task.sh new *", "effect": "allow" },
     { "action": "edit", "resource": "*.agent/report.md", "effect": "allow" },
 
@@ -40,21 +52,16 @@
     { "action": "shell", "resource": "git worktree *", "effect": "deny" },
     { "action": "shell", "resource": "agent-task.sh start *", "effect": "deny" },
     { "action": "shell", "resource": "agent-task.sh done *", "effect": "deny" },
-    // Builds and tests go through agent-check.sh (build slots, low priority, logs).
-    // TODO: the commands that build and run tests, from AGENTS.md (filled by /init);
-    // one deny rule per command.
-    { "action": "shell", "resource": "TODO_BUILD_COMMAND *", "effect": "deny" },
-    { "action": "shell", "resource": "TODO_TEST_COMMAND *", "effect": "deny" },
 
     // Generated files and build output: enforced only here, not repeated in AGENTS.md.
     // TODO: replace with the real paths from AGENTS.md (filled by /init), and add
     // a deny rule for every other generated-file pattern it names.
     { "action": "edit", "resource": "*lex.yy.c", "effect": "deny" },
-    // Build output: agent-check.sh builds each CMake preset in its binaryDir.
+    // Build output: each CMake preset builds in its binaryDir.
     // TODO: the binaryDir pattern of the presets in CMakePresets.json, e.g.
     // "*/build/*" for "${sourceDir}/build/${presetName}" (AGENTS.md names it).
     { "action": "edit", "resource": "TODO_BUILD_DIR/*", "effect": "deny" },
-    // agent-check.sh logs.
+    // agent-check.sh logs (prebuilds).
     { "action": "edit", "resource": "*.agent/check/*", "effect": "deny" },
 
     // Agents never edit their own config or instructions. agent-check.conf
@@ -82,7 +89,7 @@
       "description": "First repair attempt from a Jenkins failure handoff",
       "mode": "primary",
       // "model": "openrouter/TODO_CHEAP_MODEL",
-      "system": "You fix one failing Jenkins build. The handoff gives the task, the diff summary, previous attempts and a failure excerpt. Make the smallest change that fixes the failure, run agent-check.sh, commit, and stop. Do not refactor or widen the scope. If the failure is not caused by the change (infrastructure, flaky test), say so and stop without editing.",
+      "system": "You fix one failing Jenkins build. The handoff gives the task, the diff summary, previous attempts and a failure excerpt. Make the smallest change that fixes the failure, build and run the failing tests as background commands, commit, and stop. Do not refactor or widen the scope. If the failure is not caused by the change (infrastructure, flaky test), say so and stop without editing.",
     },
   },
 }

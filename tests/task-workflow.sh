@@ -200,6 +200,18 @@ check_eq "no free build slot: exit 4" 4 "$(STUB_SLOTS=1 STUB_WAIT_MIN=0.05 ac "$
 check_eq "a second slot is free" 0 "$(STUB_SLOTS=2 ac "$wt3")"
 kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
 
+# A prebuild in its own session (as agent-task.sh starts it) gives way to a check.
+(cd "$wt3" && STUB_SLEEP=30 exec setsid agent-check.sh --prebuild) </dev/null >/dev/null 2>&1 &
+check "prebuild in its own session registers" wait_for 5 test -s "$wt3/.agent/check/prebuild.pid"
+check_eq "a check stops the running prebuild and passes" 0 "$(ac "$wt3")"
+check "prebuild logged as stopped for the check" grep -q 'prebuild dev: STOPPED for check dev' "$journal/TASK-3.md"
+check "no prebuild left running" bash -c "! pgrep -f 'agent-check[.]sh --prebuild'"
+# One in this shell's session (like your terminal) isn't stopped: that would end the session.
+(cd "$wt3" && STUB_SLEEP=0.6 agent-check.sh --prebuild) </dev/null >/dev/null 2>&1 &
+holder=$!
+check "prebuild in a shared session doesn't register" bash -c "sleep 0.3; test ! -e '$wt3/.agent/check/prebuild.pid' && wait_pid=$holder && while kill -0 \$wait_pid 2>/dev/null; do sleep 0.1; done"
+wait "$holder" 2>/dev/null
+
 STUB_SESSION_SECONDS=3 agent-task.sh start TASK-3 >/dev/null
 check "start prebuilds the default preset during the session" grep -q 'prebuild dev: OK, prebuilt preset dev' "$journal/TASK-3.md"
 STUB_SESSION_SECONDS=1 STUB_SLEEP=30 agent-task.sh start TASK-3 >/dev/null
@@ -239,9 +251,37 @@ case "\$2" in
 esac
 EOF
 chmod +x "$fake/bin/opencode"
+printf '1\t2\tcheck\tdev\t0\tses_a\tt\n3\t4\tcommand\t\t3\tses_a\t\n5\t6\tcommand\t\t0\t\t\n' > "$journal/TASK-9.checks.tsv"
 (PATH="$fake/bin:$PATH" ledger_row "$MAIN" "$P/worktrees/TASK-9" TASK-9 interactive new 5 accepted "") >/dev/null
 check_eq "ledger: only the worktree's session" "ses_a" "$(ledger_field -1 6)"
 check_eq "ledger: agent minutes count wake-ups, not tool calls" "3.0" "$(ledger_field -1 8)"
+check_eq "ledger: checks and wrapped commands as rounds, a non-zero command exit fails" "2 1" "$(ledger_field -1 10) $(ledger_field -1 11)"
+
+echo "# plugin: agents' build and test commands"
+# plugins/agent-factory with a stand-in model (tests/stub-model.py) that runs
+# scripted shell calls; build-stub stands in for the build tool.
+check "03 puts the plugin path into opencode.jsonc" grep -q "\"package\": \"$REPO/plugins/agent-factory\"" "$P/opencode.jsonc"
+printf '#!/usr/bin/env bash\necho "building with PLUGIN_TEST_ENV=$PLUGIN_TEST_ENV PATH=$PATH"\nexit 3\n' > "$T/bin/build-stub"
+chmod +x "$T/bin/build-stub"
+sed -i 's|"commands": \["TODO_BUILD_COMMAND", "TODO_TEST_COMMAND"\], "env": {}|"commands": ["build-stub"], "env": { "PLUGIN_TEST_ENV": "from-plugin", "PATH": "/opt/ccache-stub:${PATH}" }|' "$P/opencode.jsonc"
+stub_model
+wt5="$P/worktrees/TASK-5"
+git -C "$MAIN" worktree add -q --detach "$wt5"
+commands() { awk -F'\t' '$3 == "command" && $6 ~ /^ses_/' "$journal/TASK-5.checks.tsv" 2>/dev/null | wc -l; }
+stub_run "$wt5" '[{"tool": "shell", "args": {"command": "cd . && build-stub --all"}}, {"tool": "shell", "args": {"command": "echo not-wrapped"}}]'
+check "journal: wrapped command with exit code" grep -q 'command `cd . && build-stub --all`: exit 3, ' "$journal/TASK-5.md"
+check "full output logged, with the plugin's env" grep -q 'PLUGIN_TEST_ENV=from-plugin' "$HOME/.agent-factory/reports/TASK-5/commands/"*.log
+check "env: \${PATH} expands to the command's PATH" grep -q "PATH=/opt/ccache-stub:.*$T/bin" "$HOME/.agent-factory/reports/TASK-5/commands/"*.log
+check "journal links the log" grep -q 'log: \[.*\](../reports/TASK-5/commands/' "$journal/TASK-5.md"
+check_eq "only wrapped commands logged, with their session" 1 "$(commands)"
+stub_run "$wt5" '[{"tool": "shell", "args": {"command": "build-stub", "background": true}}, {"tool": "shell", "args": {"command": "sleep 0.3"}}]'
+check_eq "background command logged when it exits" 2 "$(commands)"
+(cd "$wt5" && STUB_SLEEP=30 exec setsid agent-check.sh --prebuild) </dev/null >/dev/null 2>&1 &
+wait_for 5 test -s "$wt5/.agent/check/prebuild.pid"
+stub_run "$wt5" '[{"tool": "shell", "args": {"command": "build-stub"}}]'
+check "wrapped command stops the running prebuild" grep -q 'prebuild dev: STOPPED for command `build-stub`' "$journal/TASK-5.md"
+check "prebuild gone before the command finished" bash -c "! pgrep -f 'agent-check[.]sh --prebuild'"
+git -C "$MAIN" worktree remove --force "$wt5"
 
 echo "# CMake profile from 09-check-profile.sh"
 # Stub cmake: --preset <name> configures into <worktree>/build/<name>, preset

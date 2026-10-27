@@ -50,7 +50,7 @@ These decisions were settled in the design discussion; reopen only with a reason
 | Build-resource strategy decided by iteration | Disk, CPU and build time interact; no single upfront answer | Fixing the build layout upfront |
 | Ledger records only the model's work; build time and disk use go to the task journal | The ledger compares models and tasks; build data describes the VM and guides build-resource tuning | Build time and disk columns in the ledger |
 | `agent-check.sh` is a generic wrapper; the repo's CI procedure lives in a check profile (`~/<project>/agent-check.conf`, sourced bash) drafted by `09-check-profile.sh`, completed with an OpenCode prompt, validated by a build | Agent features (interface, output, limits, logs) stay the same for any repo; the profile mirrors CI, which has several presets and test runs | Build-system defaults inside the wrapper; settings in `agent.env` |
-| Agents run `agent-check.sh` as an OpenCode background command | OpenCode 2.1.3 stops foreground shell commands after 2 minutes (a fixed default, found in the binary); background commands have no limit and report when done | Relying on a timeout setting (none in 2.1.3); a plugin that sets the timeout |
+| Agents run the repo's own build and test commands as OpenCode background commands; an OpenCode plugin (`plugins/agent-factory`) wraps them without changing them: environment, full output log, journal and ledger rows | OpenCode 2.1.3 stops foreground shell commands after 2 minutes (a fixed default, found in the binary). One plugin entry per project replaces deny rules and teaching agents a second build interface; agents in VM-0002 used the repo's commands anyway | Agents run `agent-check.sh` (replaced: agents bypassed it); deny rules for the build commands; a plugin that rewrites commands |
 | Validate interactive value before scaling background | With 30-min CI and one agent, background throughput is a few tasks per day | Parallel background agents from day 1 |
 
 ## 4. Stack
@@ -63,7 +63,7 @@ OpenCode + OpenRouter + `AGENTS.md` + Bash orchestration; no other services in P
 | Billing and routing | OpenRouter | One account for many providers; spend visible per key, model and provider. |
 | Instructions | `AGENTS.md` | Portable across tools. Includes a short codebase map (architecture, key directories, build entry points). Permissions are enforced in tool config, not in this file. Kept outside the project repo at `~/<project>/instructions/AGENTS.md` and loaded through the [`instructions`](https://opencode.ai/v2/docs/instructions/) key in `~/<project>/opencode.jsonc`; drafted and refreshed with OpenCode `/init`. |
 | Code navigation | clangd + `compile_commands.json` | Optional at first if generating the compilation database is hard. CMake: `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON`; Make: `bear -- make`. |
-| Orchestration | Bash scripts | Task lifecycle, Git, Jenkins polling, retries, budget checks. |
+| Orchestration | Bash scripts, one OpenCode plugin | Task lifecycle, Git, Jenkins polling, retries, budget checks. The plugin (TypeScript) only wraps the agents' build and test commands. |
 | Isolation | Git worktree + branch per background task | Layout: `~/<project>/main/` (repo), `~/<project>/worktrees/<task-id>/` (branch `agent/<task-id>`), with the OpenCode config and `AGENTS.md` in `~/<project>/`. Build-directory layout decided by iteration (section 8). |
 
 ## 5. Agents, agent classes and model tiers
@@ -102,7 +102,7 @@ Interactive work stays semi-autonomous with approvals; background work runs thro
 
 - OpenCode in VS Code with approvals on (no `--auto`), matching the previous semi-autonomous workflow.
 - Use the `plan` agent before larger changes.
-- Same `AGENTS.md` and `agent-check.sh` as background agents; push only when the change would be accepted.
+- Same `AGENTS.md` and plugin as background agents; push only when the change would be accepted.
 - The developer owns consequential actions and final acceptance.
 
 ### Background loop (`agent-task.sh "<task>"`)
@@ -110,7 +110,7 @@ Interactive work stays semi-autonomous with approvals; background work runs thro
 1. **Pre-flight:** create a task ID; check free disk space and refuse to start below a threshold.
 2. **Isolate:** create a worktree and an `agent/<task-id>` branch; pre-build the worktree before the agent starts, so the agent does not wait on a cold build.
 3. **Run the agent:** `opencode run --agent build --title "<task>" "<task>"` with a defined task, scope and limits.
-4. **Implement and check locally:** the agent iterates with `agent-check.sh` only, then commits and exits. It never pushes (restricted class) and never polls Jenkins.
+4. **Implement and check locally:** the agent iterates with the repo's build and test commands, which the plugin logs, then commits and exits. It never pushes (restricted class) and never polls Jenkins.
 5. **Validate and push:** the orchestrator validates the diff, then pushes — or the push-enabled agent pushes itself. Push once per finished attempt: every push starts a 30-minute Jenkins run.
 6. **Wait outside the model:** the push starts the multibranch pipeline; the orchestrator polls the branch's job through the Jenkins REST API at zero token cost.
 7. **Match the result to the pushed commit SHA:**
@@ -147,7 +147,7 @@ Build time, CPU and disk space on the VM are an open problem: there is no known 
 **Build resources (iterate):**
 
 - Start simple: one background task at a time.
-- Record build time and disk usage per task in the task journal to guide the choices (`agent-check.sh` logs each check and prebuild with its duration; `agent-task.sh done` logs disk use).
+- Record build time and disk usage per task in the task journal to guide the choices (the plugin logs each agent build and test command, `agent-check.sh` each prebuild, with its duration; `agent-task.sh done` logs disk use).
 - Starting point: a build directory per worktree and preset, at most 5 checks at once (`CHECK_SLOTS`), `nice`/`ionice` (setup-guide.md steps 8 and 9).
 - Options to try: reusing worktrees, shared vs. separate build directories, cleanup after each task, other `-j` and slot limits.
 - Guard from day 1: the free-disk check before each task (section 6, step 1).
@@ -163,7 +163,8 @@ Build time, CPU and disk space on the VM are an open problem: there is no known 
 | Script | Purpose |
 | --- | --- |
 | `agent-task.sh` | Task lifecycle. Done (interactive): `start`/`new`/`done`/`list`, worktree via OpenCode, journal, report archive. To do (background): pre-flight, agent run, push, Jenkins polling, repair, ledger entry, limits |
-| `agent-check.sh` | Done: generic wrapper around the repo's CI procedure, described in a check profile (`bootstrap/09-check-profile.sh`): presets, build, test suites, output parsers. Adds the agent interface, bounded output (first errors, failing tests), a diff filter (no build when no build file changed), prebuild while the session starts, VM-wide build slots, logs. Later, if the data warrants it: a result cache (check-result-cache.md), mapping changed files to targets and tests |
+| `agent-check.sh` | Done: generic wrapper around the repo's CI procedure, described in a check profile (`bootstrap/09-check-profile.sh`): presets, build, test suites, output parsers. Adds bounded output (first errors, failing tests), a diff filter (no build when no build file changed), prebuild while the session starts, VM-wide build slots, logs. It runs the prebuild and serves you. Later, if the data warrants it: a result cache (check-result-cache.md), mapping changed files to targets and tests |
+| `plugins/agent-factory` | Done: OpenCode plugin that wraps the agents' build and test commands without changing them: environment, full output log, journal line, ledger row ([ADR 0001](adr/0001-plugin-wraps-agent-commands.md)). Proposed: build slots and low priority ([proposal-build-slots.md](proposal-build-slots.md)), approval waits ([proposal-approval-waits.md](proposal-approval-waits.md)) |
 | `jenkins-status.sh` | Build status, commit SHA, failed stage, bounded error excerpt |
 
 ## 9. Cost and productivity monitoring
@@ -174,7 +175,7 @@ Phase 1 uses existing dashboards plus a lightweight ledger; no Grafana, Langfuse
 
 - **OpenRouter Activity page:** cost by key, model and provider; tokens and cache behavior.
 - **`opencode stats`:** token usage and cost per session and model.
-- **Task ledger:** CSV, one row per task written by `agent-task.sh done`: session data (model, cost, agent minutes: the model's working time, without tool calls, so without approval waits and local checks) from OpenCode, local check rounds and failures from `agent-check.sh`, human minutes and outcome asked at the prompt. Jenkins rounds are added with the background loop (Phase 1b). Build time and disk use go to the task journal, not the ledger.
+- **Task ledger:** CSV, one row per task written by `agent-task.sh done`: session data (model, cost, agent minutes: the model's working time, without tool calls, so without approval waits and local checks) from OpenCode, local check rounds and failures from the plugin's wrapped commands and `agent-check.sh`, human minutes and outcome asked at the prompt. Jenkins rounds are added with the background loop (Phase 1b). Build time and disk use go to the task journal, not the ledger.
 
 **Budget controls:**
 

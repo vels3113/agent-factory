@@ -39,7 +39,7 @@ wt="$P/worktrees/TASK-2"
 rm -rf "$wt/.agent"
 printf 'int average(int *v, int n) {\n    int s = 0;\n    for (int i = 0; i < n; i++) s += v[i];\n    return s / n;\n}\n' > "$wt/util.c"
 git -C "$wt" add util.c && git -C "$wt" commit -q -m "add util.c"
-agent_run "$wt" "Task: create math.c with a function int add(int a, int b) that returns a + b, and commit it. agent-check.sh is not available in this test, so skip the check. While reading util.c you will notice that average() divides by zero when n == 0; that is outside this task."
+agent_run "$wt" "Task: create math.c with a function int add(int a, int b) that returns a + b, and commit it. This test has no build, so skip building. While reading util.c you will notice that average() divides by zero when n == 0; that is outside this task."
 check "math.c committed" git -C "$wt" cat-file -e HEAD:math.c
 check "out-of-scope util.c left unchanged" git -C "$wt" diff --quiet HEAD~1 HEAD -- util.c
 check "side task filed with parent TASK-2" grep -q '^| \[VM-[0-9]*\](.*) | local | TASK-2 |' "$journal/index.md"
@@ -47,9 +47,11 @@ check "report written to .agent/report.md" test -s "$wt/.agent/report.md"
 check "report names the side task" grep -q 'VM-[0-9]' "$wt/.agent/report.md"
 
 echo "# ledger from real sessions"
-printf 'CHECK_PRESETS=(default)\ncheck_build() { echo "build ok"; }\n' > "$P/agent-check.conf"
-agent_run "$wt" "Run the local check twice, as two separate shell commands, then stop. Don't change any files."
-check "agent ran agent-check.sh" test -s "$journal/TASK-2.checks.tsv"
+# The plugin wraps build-stub, a stand-in for the build tool.
+printf '#!/usr/bin/env bash\necho "build ok"\n' > "$T/bin/build-stub" && chmod +x "$T/bin/build-stub"
+sed -i 's|"commands": \["TODO_BUILD_COMMAND", "TODO_TEST_COMMAND"\]|"commands": ["build-stub"]|' "$P/opencode.jsonc"
+agent_run "$wt" "Run the build command build-stub twice, as two separate foreground shell commands (not in the background), then stop. Don't change any files."
+check "plugin logged the agent's build commands" grep -q "	command	" "$journal/TASK-2.checks.tsv"
 printf 'new\n5\naccepted\n\n' | agent-task.sh done TASK-2 >/dev/null 2>&1
 fields="$(python3 -I -c '
 import csv, sys
