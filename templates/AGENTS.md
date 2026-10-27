@@ -23,7 +23,11 @@ Instructions for AI agents working in this repository. Permissions are enforced 
 - Lexers: edit the flex sources (`.l`); the build regenerates the lexer `.c` files.
 - Never query or wait for Jenkins. CI runs after you finish.
 - Never change the Git identity or Git config (no `git config`, no `git -c user.*`). If a commit fails, report the error and stop.
+- Search only inside your worktree; never search `~`, `/` or other checkouts.
+- For a question that needs more than about five files read (where is X handled, how does Y flow), ask the `explore` subagent and work from its answer.
+- Before you change code, say how you will check the fix (reproduce the problem first); afterwards, show that same check passing.
 - Keep changes within the task's scope. Commit when the build and the tests for your change pass, then stop.
+- Stop any server or other background process you started before you finish, and name it in your report.
 - If you are blocked or the task is unclear, say so and stop instead of guessing.
 
 ## Tasks and reports
