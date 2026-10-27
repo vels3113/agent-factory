@@ -5,6 +5,7 @@
 # and linked from the journal, never pasted into it.
 
 factory_dir="${AGENT_FACTORY_DIR:-$HOME/.agent-factory}"
+lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"  # with ledger_row.py and opencode_json.py
 journal_dir="$factory_dir/journal"
 reports_dir="$factory_dir/reports"
 index="$journal_dir/index.md"
@@ -81,70 +82,12 @@ ledger_row() {
         || { echo "$ledger has older columns; move it aside and run bootstrap/02-init-ledger.sh." >&2; return 1; }
     sessions="$(mktemp -d)"
     (cd "$main" && opencode session list --standalone --format json -n 1000) > "$sessions/list.json"
-    python3 -I -c '
-import json, sys
-for s in json.load(open(sys.argv[1])):
-    if s.get("directory") == sys.argv[2]: print(s["id"])' "$sessions/list.json" "$wt" |
+    python3 -I "$lib_dir/opencode_json.py" sessions-in "$wt" < "$sessions/list.json" |
     while read -r sid; do
         (cd "$main" && opencode session export --standalone "$sid") > "$sessions/$sid.json"
     done
     rm -f "$sessions/list.json"
-    python3 -I - "$ledger" "$sessions" "$journal_dir/$3.checks.tsv" "$factory_dir/costs.tsv" "$3" "$4" "$5" "$6" "$7" "$8" <<'EOF'
-import csv, datetime, glob, json, os, sys
-ledger, sdir, tsv, costs_tsv, task, mode, origin, human, outcome, notes = sys.argv[1:]
-charged = {}  # session -> cost the provider reported, from the plugin
-if os.path.exists(costs_tsv):
-    for line in open(costs_tsv):
-        f = line.rstrip("\n").split("\t")
-        if len(f) >= 7:
-            charged[f[1]] = charged.get(f[1], 0.0) + float(f[6])
-checks, failures = 0, 0  # agent-check.sh checks and wrapped commands OpenCode ran
-if os.path.exists(tsv):
-    for line in open(tsv):
-        f = line.rstrip("\n").split("\t")
-        if len(f) >= 6 and f[2] in ("check", "command") and f[5]:
-            checks += 1
-            failed = int(f[4]) in (1, 2, 5) if f[2] == "check" else int(f[4]) != 0
-            failures += failed
-models, providers, ids, cost, busy, tools, estimated = [], [], [], 0.0, [], [], 0
-for path in sorted(glob.glob(sdir + "/*.json")):
-    d = json.load(open(path))
-    info = d["info"]
-    ids.append(info["id"])
-    if info["id"] in charged:
-        cost += charged[info["id"]]
-    elif info.get("cost"):
-        cost += info["cost"]
-        estimated += 1
-    m = info.get("model") or {}
-    if m.get("id") and m["id"] not in models: models.append(m["id"])
-    if m.get("providerID") and m["providerID"] not in providers: providers.append(m["providerID"])
-    # A "synthetic" message resumes the agent when a background command ends.
-    start = None
-    for msg in d["messages"]:
-        if msg["type"] in ("user", "synthetic") and start is None: start = msg["time"]["created"]
-        elif msg["type"] == "idle" and start is not None:
-            busy.append((start, msg["time"]["created"])); start = None
-    for msg in d["messages"]:
-        if msg["type"] != "assistant": continue
-        for c in msg.get("content") or []:
-            t = c.get("time") or {}
-            if c.get("type") == "tool" and t.get("created") and t.get("completed"):
-                tools.append((t["created"], t["completed"]))
-merged = []  # tool spans, parallel calls joined
-for s, e in sorted(tools):
-    if merged and s <= merged[-1][1]: merged[-1][1] = max(merged[-1][1], e)
-    else: merged.append([s, e])
-busy_ms = sum(e - s for s, e in busy)
-busy_ms -= sum(max(0, min(e, te) - max(s, ts)) for s, e in busy for ts, te in merged)
-if estimated:
-    notes = (notes + "; " if notes else "") + f"cost: OpenCode estimate for {estimated} of {len(ids)} session(s)"
-row = [task, datetime.date.today().isoformat(), mode, origin, "+".join(models), "+".join(providers),
-       " ".join(ids), f"{cost:.4f}", f"{busy_ms / 60000:.1f}", human, checks, failures, "", outcome, notes]
-with open(ledger, "a", newline="") as f: csv.writer(f).writerow(row)
-print(f"Ledger: {len(ids)} session(s), ${cost:.4f}{' (partly estimated)' if estimated else ''}, {busy_ms / 60000:.1f} agent min, "
-      f"{checks} check round(s), {failures} failed.")
-EOF
+    python3 -I "$lib_dir/ledger_row.py" "$ledger" "$sessions" "$journal_dir/$3.checks.tsv" "$factory_dir/costs.tsv" "$3" "$4" "$5" "$6" "$7" "$8"
     rm -rf "$sessions"
 }
 
@@ -152,7 +95,5 @@ EOF
 project_id() {
     local main
     main="$(cd "$1" && pwd -P)"
-    (cd "$main" && opencode api --standalone project.list) | python3 -I -c '
-import json, sys
-print(next(p["id"] for p in json.load(sys.stdin) if p.get("canonical") == sys.argv[1]))' "$main"
+    (cd "$main" && opencode api --standalone project.list) | python3 -I "$lib_dir/opencode_json.py" project-id "$main"
 }

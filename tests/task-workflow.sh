@@ -88,30 +88,11 @@ check "no profile: names the bootstrap step" grep -q '09-check-profile.sh' "$T/a
 # Stub profile: two presets, a ctest-like and a pytest-like suite; output and
 # exit codes come from files in $stub.
 stub="$T/stub"
+export STUB_DIR="$stub"
 mkdir -p "$stub"
 echo 0 > "$stub/test.rc"
 echo 0 > "$stub/py.rc"
-cat > "$P/agent-check.conf" <<EOF
-CHECK_PRESETS=(dev rel)
-CHECK_DEFAULT_PRESET=dev
-CHECK_DEFAULT_SUITE=unit
-declare -A CHECK_PARSER=([unit]=ctest [py]=pytest)
-CHECK_BUILD_PATHS=('*.c')
-CHECK_TIMEOUT_MIN=\${STUB_TIMEOUT_MIN:-1}
-CHECK_WAIT_MIN=\${STUB_WAIT_MIN:-1}
-CHECK_SLOTS=\${STUB_SLOTS:-5}
-check_build() {
-    echo "preset=\$PRESET" >> "$stub/builds"
-    [[ -z "\${STUB_SLEEP:-}" ]] || sleep "\$STUB_SLEEP"
-    [[ -z "\${STUB_TOUCH:-}" ]] || echo "// touched" >> "\$STUB_TOUCH"
-    cat "$stub/build.out" 2>/dev/null
-    [[ "\$PRESET" == "\${STUB_FAIL_PRESET:-}" ]] && return 2
-    return "\$(cat "$stub/build.rc" 2>/dev/null || echo 0)"
-}
-test_unit() { echo "unit:\$*" >> "$stub/tests"; cat "$stub/test.out" 2>/dev/null; return "\$(cat "$stub/test.rc")"; }
-test_py() { cat "$stub/py.out" 2>/dev/null; return "\$(cat "$stub/py.rc")"; }
-list_unit() { printf 'parse_ok\nparse_bad\n'; }
-EOF
+cp "$REPO/tests/stubs/agent-check.conf" "$P/agent-check.conf"
 check_eq "no changes: passes" 0 "$(ac "$wt3")"
 check "no changes: says so, no build" bash -c "grep -q 'nothing to check' '$T/ac.out' && test ! -e '$stub/builds'"
 printf 'x = (\n' > "$wt3/tool.py"
@@ -243,14 +224,8 @@ cat > "$fake/ses_a.json" <<'EOF'
     {"type": "tool", "time": {"created": 2060000, "ran": 2060000, "completed": 2120000}}]},
   {"type": "idle", "time": {"created": 2150000}}]}
 EOF
-cat > "$fake/bin/opencode" <<EOF
-#!/usr/bin/env bash
-case "\$2" in
-    list) cat "$fake/list.json" ;;
-    export) cat "$fake/\$4.json" ;;
-esac
-EOF
-chmod +x "$fake/bin/opencode"
+cp "$REPO/tests/stubs/opencode-sessions.sh" "$fake/bin/opencode"
+export FAKE_SESSIONS="$fake"
 printf '1\t2\tcheck\tdev\t0\tses_a\tt\n3\t4\tcommand\t\t3\tses_a\t\n5\t6\tcommand\t\t0\t\t\n' > "$journal/TASK-9.checks.tsv"
 (PATH="$fake/bin:$PATH" ledger_row "$MAIN" "$P/worktrees/TASK-9" TASK-9 interactive new 5 accepted "") >/dev/null
 check_eq "ledger: only the worktree's session" "ses_a" "$(ledger_field -1 6)"
@@ -265,8 +240,8 @@ echo "# plugin: agents' build and test commands"
 # plugins/agent-factory with a stand-in model (tests/stub-model.py) that runs
 # scripted shell calls; build-stub stands in for the build tool.
 check "03 puts the plugin path into opencode.jsonc" grep -q "\"package\": \"$REPO/plugins/agent-factory\"" "$P/opencode.jsonc"
-printf '#!/usr/bin/env bash\necho "building with PLUGIN_TEST_ENV=$PLUGIN_TEST_ENV PATH=$PATH"\nexit 3\n' > "$T/bin/build-stub"
-chmod +x "$T/bin/build-stub"
+cp "$REPO/tests/stubs/build-stub.sh" "$T/bin/build-stub"
+export STUB_BUILD_EXIT=3
 sed -i 's|"commands": \["TODO_BUILD_COMMAND", "TODO_TEST_COMMAND"\], "env": {}|"commands": ["build-stub"], "env": { "PLUGIN_TEST_ENV": "from-plugin", "PATH": "/opt/ccache-stub:${PATH}" }|' "$P/opencode.jsonc"
 stub_model
 wt5="$P/worktrees/TASK-5"
@@ -295,21 +270,8 @@ echo "# CMake profile from 09-check-profile.sh"
 # Stub cmake: --preset <name> configures into <worktree>/build/<name>, preset
 # "outside" into a folder next to the worktree; every call is logged.
 export STUB_CMAKE_LOG="$T/cmake.log"
-cat > "$T/bin/cmake" <<'EOF'
-#!/usr/bin/env bash
-echo "cmake $*" >> "$STUB_CMAKE_LOG"
-case "$1" in
-    --preset)
-        d="$PWD/build/$2"
-        [[ "$2" == outside ]] && d="$(dirname "$PWD")/shared-build"
-        mkdir -p "$d" && touch "$d/CMakeCache.txt"
-        echo "-- Build files have been written to: $d" ;;
-    --list-presets=configure)
-        printf 'Available configure presets:\n\n  "dev" - Dev\n  "rel" - Release\n' ;;
-esac
-EOF
-printf '#!/usr/bin/env bash\necho "ctest $*" >> "$STUB_CMAKE_LOG"\n' > "$T/bin/ctest"
-chmod +x "$T/bin/cmake" "$T/bin/ctest"
+cp "$REPO/tests/stubs/cmake.sh" "$T/bin/cmake"
+cp "$REPO/tests/stubs/ctest.sh" "$T/bin/ctest"
 sed -i 's/^BUILD_SYSTEM=.*/BUILD_SYSTEM=cmake/' "$HOME/.agent-factory/vm.env"
 rm "$P/agent-check.conf"
 "$REPO/bootstrap/09-check-profile.sh" "$P" >/dev/null

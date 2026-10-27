@@ -48,7 +48,7 @@ check "report names the side task" grep -q 'VM-[0-9]' "$wt/.agent/report.md"
 
 echo "# ledger from real sessions"
 # The plugin wraps build-stub, a stand-in for the build tool.
-printf '#!/usr/bin/env bash\necho "build ok"\n' > "$T/bin/build-stub" && chmod +x "$T/bin/build-stub"
+cp "$REPO/tests/stubs/build-stub.sh" "$T/bin/build-stub"
 sed -i 's|"commands": \["TODO_BUILD_COMMAND", "TODO_TEST_COMMAND"\]|"commands": ["build-stub"]|' "$P/opencode.jsonc"
 agent_run "$wt" "Run the build command build-stub twice, as two separate foreground shell commands (not in the background), then stop. Don't change any files."
 check "plugin logged the agent's build commands" grep -q "	command	" "$journal/TASK-2.checks.tsv"

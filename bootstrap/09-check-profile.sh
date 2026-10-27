@@ -24,6 +24,7 @@ project_dir="$(cd "$project_dir" 2>/dev/null && pwd)" || { echo "Error: cannot c
 main="$project_dir/main"
 here="$(dirname "$(readlink -f "$0")")"
 scripts="$(cd "$here/../scripts" && pwd)"
+templates="$(cd "$here/../templates/check-profile" && pwd)"
 source "$scripts/agent-lib.sh"
 [[ -r "$factory_dir/vm.env" ]] || { echo "Error: missing $factory_dir/vm.env; run 04-vm-facts.sh." >&2; exit 1; }
 source "$factory_dir/vm.env"
@@ -38,34 +39,10 @@ grep -qx '/agent-check.draft.conf' "$exclude" 2>/dev/null || echo '/agent-check.
 
 prompt="Complete agent-check.draft.conf in this directory: the profile agent-check.sh uses to run this repo's CI procedure locally. Its header describes the interface; keep the header. Read the Jenkinsfile, the scripts it calls and CMakePresets.json if there is one. Set CHECK_PRESETS to the build configurations CI builds and CHECK_DEFAULT_PRESET to the one for everyday changes. Write one test_<suite> function per test run CI does, running only the named tests when names are given, plus list_<suite> when the test runner can list its tests, and set each suite's parser in CHECK_PARSER. Adjust CHECK_BUILD_PATHS to the files whose change needs a build. If the build files already use ccache (for example a compiler launcher in CMakeLists.txt or the presets, or ccache in the Makefiles), remove the profile's ccache lines (the launcher in check_configure, or with_ccache). Replace every TODO. Edit no other file. At the end, list what CI runs that the profile leaves out."
 
-# new_profile cmake|make: a new profile, with the presets in $use (TODO if none).
+# new_profile cmake|make: a new profile, with the presets in $use (TODO if none):
+# the interface header, then the build system's draft (templates/check-profile/).
 new_profile() {
-    cat <<'EOF'
-# agent-check.sh profile: this project's CI procedure, in the terms of
-# scripts/agent-check.sh. Sourced bash. Written by bootstrap/09-check-profile.sh,
-# completed with the OpenCode prompt it prints, validated and installed as
-# <project>/agent-check.conf by `09-check-profile.sh <project> --validate`
-# (setup-guide.md step 9).
-#
-# Interface:
-#   CHECK_PRESETS, CHECK_DEFAULT_PRESET   named build configurations
-#   CHECK_BUILD_PATHS                     changed files that need a build (bash globs; * matches /)
-#   check_configure, check_build          run in the worktree for one preset
-#   build_dir <output>                    optional: prints the preset's build directory, given the
-#                                         output of check_configure; empty output keeps the last one
-#   test_<suite> [<test>...]              a test suite: runs the named tests, or the whole suite
-#                                         without names; list_<suite> lists its tests. Every
-#                                         test_* function is a suite, so helpers use other names
-#   CHECK_DEFAULT_SUITE                   the suite for test names given without --suite;
-#                                         needed only with more than one suite
-#   CHECK_PARSER[build|<suite>]           output parser: compiler, ctest, pytest or generic
-# The functions run in a separate bash in the worktree and see only these
-# variables: PRESET, BUILD_DIR (absolute; empty before the first build_dir
-# report), JOBS, LOAD. Exit code 3 from a function means a setup error.
-# Optional overrides of the wrapper settings: CHECK_SLOTS, CHECK_JOBS,
-# CHECK_LOAD, CHECK_TIMEOUT_MIN, CHECK_PREBUILD_TIMEOUT_MIN, CHECK_WAIT_MIN.
-
-EOF
+    cat "$templates/header.conf"
     if [[ "$1" == cmake ]]; then
         printf '# Found by 09-check-profile.sh: configure presets: %s; Jenkinsfiles: %s;\n' \
             "${presets[*]:-none found}" "${jenkinsfiles[*]:-none found}"
@@ -73,57 +50,8 @@ EOF
         echo '# Configure presets CI builds; the default is the one for everyday changes,'
         echo '# also used by the prebuild.'
         printf 'CHECK_PRESETS=(%s)\nCHECK_DEFAULT_PRESET=%s\n' "${use[*]:-TODO}" "${use[0]:-TODO}"
-        cat <<'EOF'
-
-CHECK_BUILD_PATHS=('*.c' '*.cc' '*.cpp' '*.cxx' '*.h' '*.hh' '*.hpp' '*.hxx' '*.l' '*.y'
-    '*CMakeLists.txt' '*.cmake' 'CMakePresets.json' 'CMakeUserPresets.json')
-
-# Configure once per build directory, again when the presets change. Adds
-# ccache when it is installed.
-check_configure() {
-    [[ -n "$BUILD_DIR" && -e "$BUILD_DIR/CMakeCache.txt" && ! CMakePresets.json -nt "$BUILD_DIR/CMakeCache.txt" ]] && return 0
-    local launcher=()
-    command -v ccache >/dev/null && launcher=(-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache)
-    cmake --preset "$PRESET" "${launcher[@]}"
-}
-# The preset's binaryDir, as CMake reports it after configuring.
-build_dir() { sed -n 's/^-- Build files have been written to: //p' "$1" | tail -n 1; }
-check_build() { cmake --build "$BUILD_DIR" --parallel "$JOBS" -- -l "$LOAD"; }
-
-# Test runs CI does. TODO: one test_<suite> (and list_<suite>) per CI test run;
-# with more than one, CHECK_DEFAULT_SUITE names the default.
-declare -A CHECK_PARSER=([build]=compiler [unit]=ctest)
-test_unit() {
-    local only=()
-    (($#)) && only=(-R "^($(IFS='|'; echo "$*"))\$")
-    ctest --test-dir "$BUILD_DIR" --output-on-failure --no-tests=error -j "$JOBS" "${only[@]}"
-}
-list_unit() { ctest --test-dir "$BUILD_DIR" -N | sed -n 's/^ *Test *#[0-9]*: //p'; }
-EOF
-    else
-        cat <<'EOF'
-# Build configurations CI builds. TODO: one name per configuration (e.g. debug,
-# release); check_configure and check_build get it as $PRESET.
-CHECK_PRESETS=(default)
-CHECK_DEFAULT_PRESET=default
-
-CHECK_BUILD_PATHS=('*.c' '*.cc' '*.cpp' '*.cxx' '*.h' '*.hh' '*.hpp' '*.hxx' '*.l' '*.y'
-    '*Makefile' '*Makefile.*' '*.mk')
-
-# ccache's compiler symlinks first on PATH, when ccache is installed.
-with_ccache() { [[ -d /usr/lib/ccache ]] && command -v ccache >/dev/null && PATH="/usr/lib/ccache:$PATH"; return 0; }
-# TODO: the configure step CI runs, if any (e.g. ./configure for $PRESET).
-check_configure() { :; }
-# The worktree itself: Make builds in place.
-build_dir() { echo .; }
-check_build() { with_ccache; make -j"$JOBS" -l "$LOAD"; }
-
-# Test runs CI does. TODO: one test_<suite> (and list_<suite>) per CI test run;
-# with more than one, CHECK_DEFAULT_SUITE names the default.
-declare -A CHECK_PARSER=([build]=compiler [check]=generic)
-test_check() { with_ccache; make -j"$JOBS" -l "$LOAD" "${@:-check}"; }
-EOF
     fi
+    cat "$templates/$1.conf"
 }
 
 if ((!validate)); then

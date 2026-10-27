@@ -56,10 +56,7 @@ done
 # OpenCode project start command: ask before replacing a different one.
 start_cmd="$scripts/agent-worktree-setup.sh"
 pid="$(project_id "$main")"
-current="$(cd "$main" && opencode api --standalone project.list | python3 -I -c '
-import json, sys
-p = next(p for p in json.load(sys.stdin) if p["id"] == sys.argv[1])
-print((p.get("commands") or {}).get("start", ""))' "$pid")"
+current="$(cd "$main" && opencode api --standalone project.list | python3 -I "$scripts/opencode_json.py" start-command "$pid")"
 if [[ "$current" == "$start_cmd" ]]; then
     echo "OpenCode start command already set."
 else

@@ -55,16 +55,8 @@ sandbox() {
     echo '{ "update": "disable" }' > "$HOME/.config/opencode/opencode.jsonc"
     git config --global user.name "Agent Test"
     git config --global user.email "agent-test@example.invalid"
-    cat > "$T/bin/opencode" <<EOF
-#!/usr/bin/env bash
-if [[ \$# -eq 1 && -d "\$1" ]]; then
-    mkdir -p "\$1/.agent" && echo "# stub session report" > "\$1/.agent/report.md"
-    sleep "\${STUB_SESSION_SECONDS:-0}"
-    exit 0
-fi
-exec "$oc_bin/opencode" "\$@"
-EOF
-    chmod +x "$T/bin/opencode"
+    export OPENCODE_REAL="$oc_bin/opencode"
+    cp "$REPO/tests/stubs/opencode-ui.sh" "$T/bin/opencode"
     export PATH="$T/bin:$HOME/.local/bin:$oc_bin:$PATH"
     # Commands without --standalone (debug config, the UI) use the background
     # service, which has a fixed default port; give the sandbox its own.
