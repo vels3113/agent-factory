@@ -40,6 +40,11 @@
     { "action": "shell", "resource": "git worktree *", "effect": "deny" },
     { "action": "shell", "resource": "agent-task.sh start *", "effect": "deny" },
     { "action": "shell", "resource": "agent-task.sh done *", "effect": "deny" },
+    // Builds and tests go through agent-check.sh (build slots, low priority, logs).
+    // TODO: the commands that build and run tests, from AGENTS.md (filled by /init);
+    // one deny rule per command.
+    { "action": "shell", "resource": "TODO_BUILD_COMMAND *", "effect": "deny" },
+    { "action": "shell", "resource": "TODO_TEST_COMMAND *", "effect": "deny" },
 
     // Generated files and build output: enforced only here, not repeated in AGENTS.md.
     // TODO: replace with the real paths from AGENTS.md (filled by /init), and add

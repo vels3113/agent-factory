@@ -12,8 +12,9 @@ Instructions for AI agents working in this repository. Permissions are enforced 
 
 ## Build and test
 
-<!-- TODO: build system, build directory, how to build one target, how to run one test. -->
+<!-- TODO: build system, build directory, and the main build and test commands CI runs. agent-check.sh wraps them: describe them as what agent-check.sh runs, not as commands for agents. -->
 
+- Build and test only through `agent-check.sh`, never by calling the build tool or test runner yourself. This includes building a binary to run by hand: `agent-check.sh --prebuild` builds the default preset in your worktree.
 - Check your change with `agent-check.sh` only: `agent-check.sh [--preset <name>]... [--suite <name>] [<test>...]`. It builds incrementally (the default preset unless you name presets) and runs the tests you name, with short output (first errors, failing tests) and the path of the full log. `agent-check.sh --list` shows the presets CI builds, the test suites and their tests. It is on `PATH`: run it as `agent-check.sh`, not `./agent-check.sh`.
 - Run it as a background shell command (`background: true`). Don't edit files until its result arrives.
 - Exit codes: 0 passed, 1 build failed, 2 tests failed, 5 files changed during the check (run it again). 3 (setup error) or 4 (timed out, or no free build slot): report it and stop, don't change code to work around it.

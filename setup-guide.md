@@ -97,7 +97,7 @@ OpenCode's built-in `/init` ("guided AGENTS.md setup"; not yet in the v2 docs) r
 4. Run, as one line:
 
    ```text
-   /init Keep the Rules section of the existing AGENTS.md unchanged. Fill the Codebase map and Build and test sections. Start from ~/.agent-factory/repo-overview.txt if it exists. This is a large C++/C/flex repo: name the build output directories, the generated lexer .c files and their .l sources, how to build one target, and how to run one test. List the configure presets in CMakePresets.json with their binaryDir pattern. Keep the codebase map under 20 lines.
+   /init Keep the Rules section of the existing AGENTS.md unchanged. Fill the Codebase map and Build and test sections. Start from ~/.agent-factory/repo-overview.txt if it exists. This is a large C++/C/flex repo: name the build output directories, the generated lexer .c files and their .l sources, and the main build and test commands CI runs. Agents build and test only through agent-check.sh, so describe those commands as what agent-check.sh runs, not as commands for agents. List the configure presets in CMakePresets.json with their binaryDir pattern. Keep the codebase map under 20 lines.
    ```
 
 5. Review the result; fix it by hand if needed.
@@ -105,6 +105,7 @@ OpenCode's built-in `/init` ("guided AGENTS.md setup"; not yet in the v2 docs) r
 7. Fill these placeholders in `~/<project>/opencode.jsonc`:
    - `TODO_BUILD_DIR`: the presets' `binaryDir` pattern from `AGENTS.md`, for example `*/build/*` for `${sourceDir}/build/${presetName}`. For Make, the build output directories it names.
    - The generated-file patterns: from `AGENTS.md`.
+   - `TODO_BUILD_COMMAND`, `TODO_TEST_COMMAND`: the commands that build and run tests, from `AGENTS.md`, one deny rule each, more rules for more commands. Agents then get these refused instead of reaching your approval prompt, and use `agent-check.sh`. For example, for CMake: `cmake --build *` and `ctest *`.
    - Model lines: commented out until models are chosen (step 10); until then agents use the model picked with `/models`.
 
 ## 8. Task workflow
