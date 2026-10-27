@@ -248,7 +248,8 @@ wt5="$P/worktrees/TASK-5"
 git -C "$MAIN" worktree add -q --detach "$wt5"
 commands() { awk -F'\t' '$3 == "command" && $6 ~ /^ses_/' "$journal/TASK-5.checks.tsv" 2>/dev/null | wc -l; }
 stub_run "$wt5" '[{"tool": "shell", "args": {"command": "cd . && build-stub --all"}}, {"tool": "shell", "args": {"command": "echo not-wrapped"}}]'
-check "journal: wrapped command with exit code" grep -q 'command `cd . && build-stub --all`: exit 3, ' "$journal/TASK-5.md"
+check "journal: wrapped command with exit code" grep -q 'command `cd . && build-stub --all`: exit 3, ' "$journal/TASK-5.md" \
+    || stub_diag
 check "full output logged, with the plugin's env" grep -q 'PLUGIN_TEST_ENV=from-plugin' "$HOME/.agent-factory/reports/TASK-5/commands/"*.log
 check "env: \${PATH} expands to the command's PATH" grep -q "PATH=/opt/ccache-stub:.*$T/bin" "$HOME/.agent-factory/reports/TASK-5/commands/"*.log
 check "journal links the log" grep -q 'log: \[.*\](../reports/TASK-5/commands/' "$journal/TASK-5.md"

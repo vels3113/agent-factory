@@ -13,7 +13,7 @@ pass=0
 fail=0
 
 ok() { echo "ok    $1"; pass=$((pass + 1)); }
-not_ok() { echo "FAIL  $1${2:+ ($2)}"; fail=$((fail + 1)); }
+not_ok() { echo "FAIL  $1${2:+ ($2)}"; fail=$((fail + 1)); return 1; }
 # check <name> <command...>: passes when the command succeeds.
 check() { local name="$1"; shift; if "$@" >/dev/null 2>&1; then ok "$name"; else not_ok "$name"; fi; }
 # check_eq <name> <expected> <actual>
@@ -84,7 +84,7 @@ oc_api() { (cd "$MAIN" && timeout "$OC_TIMEOUT" opencode api --standalone "$@");
 # without a real model.
 stub_model() {
     mkdir -p "$T/stub"
-    python3 -I "$REPO/tests/stub-model.py" "$T/stub" >/dev/null 2>&1 &
+    python3 -I "$REPO/tests/stub-model.py" "$T/stub" > "$T/stub/server.log" 2>&1 &
     echo $! > "$T/stub/pid"
     local i
     for i in $(seq 50); do [[ -s "$T/stub/port" ]] && break; sleep 0.1; done
@@ -107,6 +107,17 @@ stop_stub_model() { [[ -s "$T/stub/pid" ]] && kill "$(cat "$T/stub/pid")" 2>/dev
 # calls (tests/stub-model.py), permissions approved. Stdin must not be a pipe or
 # terminal: `opencode run` would wait for it. Output in $T/stub/run.out.
 stub_run() {
+    local rc=0
     echo "$2" > "$T/stub/script.json"
-    (cd "$1" && timeout "$OC_TIMEOUT" opencode run --standalone --auto -m stub/stub go) < /dev/null > "$T/stub/run.out" 2>&1
+    (cd "$1" && timeout "$OC_TIMEOUT" opencode run --standalone --auto -m stub/stub go) < /dev/null > "$T/stub/run.out" 2>&1 || rc=$?
+    ((rc == 0)) || { echo "  (stub session in $1 failed with exit $rc)"; stub_diag; }
+}
+# stub_diag: what to look at when a stub session didn't do what a check expects
+# (CI logs show only this): the session's output, the stub server's output, and
+# OpenCode's errors, warnings and plugin lines.
+stub_diag() {
+    echo "  stub session output:"; tail -n 20 "$T/stub/run.out" 2>/dev/null | sed 's/^/  | /'
+    echo "  stub server (port $(cat "$T/stub/port" 2>/dev/null || echo none)):"; tail -n 10 "$T/stub/server.log" 2>/dev/null | sed 's/^/  | /'
+    echo "  OpenCode log:"
+    grep -h -E 'level=(ERROR|WARN)|msg(age)?="[^"]*plugin' "$HOME"/.local/share/opencode/log/*.log 2>/dev/null | tail -n 15 | cut -c1-400 | sed 's/^/  | /'
 }

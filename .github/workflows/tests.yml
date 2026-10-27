@@ -19,13 +19,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Syntax check
-        run: for f in bootstrap/*.sh scripts/*.sh tests/*.sh; do bash -n "$f"; done
+        run: for f in bootstrap/*.sh scripts/*.sh tests/*.sh tests/stubs/*.sh; do bash -n "$f"; done
 
       - name: Cache OpenCode
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.AGENT_TEST_CACHE }}
           key: opencode-${{ env.OPENCODE_VERSION }}-${{ runner.os }}
