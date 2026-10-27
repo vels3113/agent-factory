@@ -63,8 +63,10 @@ ledger_header="task_id,date,mode,origin,model,provider,session_id,api_cost_usd,a
 
 # ledger_row <main-checkout> <worktree> <id> <mode> <origin> <human-min> <outcome> <notes>:
 # append one row to ledger.csv. Model, cost, sessions and agent minutes come from
-# the OpenCode sessions that ran in the worktree; agent minutes count
-# prompt-to-idle time minus the time spent in agent-check.sh. Check rounds and
+# the OpenCode sessions that ran in the worktree. Agent minutes are the model's
+# working time: from each prompt or background-command wake-up to idle, minus
+# the time inside tool calls. In 2.1.3 a tool call's time includes the wait at
+# its approval prompt, so the human's wait is never counted. Check rounds and
 # failures (exit 1, 2 or 5) come from journal/<id>.checks.tsv, counting only the
 # checks OpenCode ran. Jenkins rounds stay empty until that script exists.
 ledger_row() {
@@ -85,13 +87,13 @@ for s in json.load(open(sys.argv[1])):
     python3 -I - "$ledger" "$sessions" "$journal_dir/$3.checks.tsv" "$3" "$4" "$5" "$6" "$7" "$8" <<'EOF'
 import csv, datetime, glob, json, os, sys
 ledger, sdir, tsv, task, mode, origin, human, outcome, notes = sys.argv[1:]
-checks = []  # (start ms, end ms, exit) of the checks OpenCode ran
+checks = []  # exit codes of the checks OpenCode ran
 if os.path.exists(tsv):
     for line in open(tsv):
         f = line.rstrip("\n").split("\t")
         if len(f) >= 6 and f[2] == "check" and f[5]:
-            checks.append((int(f[0]) * 1000, int(f[1]) * 1000, int(f[4])))
-models, providers, ids, cost, busy = [], [], [], 0.0, []
+            checks.append(int(f[4]))
+models, providers, ids, cost, busy, tools = [], [], [], 0.0, [], []
 for path in sorted(glob.glob(sdir + "/*.json")):
     d = json.load(open(path))
     info = d["info"]
@@ -100,14 +102,25 @@ for path in sorted(glob.glob(sdir + "/*.json")):
     m = info.get("model") or {}
     if m.get("id") and m["id"] not in models: models.append(m["id"])
     if m.get("providerID") and m["providerID"] not in providers: providers.append(m["providerID"])
+    # A "synthetic" message resumes the agent when a background command ends.
     start = None
     for msg in d["messages"]:
-        if msg["type"] == "user" and start is None: start = msg["time"]["created"]
+        if msg["type"] in ("user", "synthetic") and start is None: start = msg["time"]["created"]
         elif msg["type"] == "idle" and start is not None:
             busy.append((start, msg["time"]["created"])); start = None
+    for msg in d["messages"]:
+        if msg["type"] != "assistant": continue
+        for c in msg.get("content") or []:
+            t = c.get("time") or {}
+            if c.get("type") == "tool" and t.get("created") and t.get("completed"):
+                tools.append((t["created"], t["completed"]))
+merged = []  # tool spans, parallel calls joined
+for s, e in sorted(tools):
+    if merged and s <= merged[-1][1]: merged[-1][1] = max(merged[-1][1], e)
+    else: merged.append([s, e])
 busy_ms = sum(e - s for s, e in busy)
-busy_ms -= sum(max(0, min(e, ce) - max(s, cs)) for s, e in busy for cs, ce, _ in checks)
-failures = sum(1 for c in checks if c[2] in (1, 2, 5))
+busy_ms -= sum(max(0, min(e, te) - max(s, ts)) for s, e in busy for ts, te in merged)
+failures = sum(1 for c in checks if c in (1, 2, 5))
 row = [task, datetime.date.today().isoformat(), mode, origin, "+".join(models), "+".join(providers),
        " ".join(ids), f"{cost:.4f}", f"{busy_ms / 60000:.1f}", human, len(checks), failures, "", outcome, notes]
 with open(ledger, "a", newline="") as f: csv.writer(f).writerow(row)

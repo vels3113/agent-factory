@@ -209,6 +209,40 @@ check "no prebuild left running" wait_for 5 bash -c "! pgrep -f 'agent-check[.]s
 check "done TASK-3" bash -c "printf 'new\n3\naccepted\n\n' | agent-task.sh done TASK-3"
 check_eq "ledger: check rounds and failures of OpenCode checks" "2 1" "$(ledger_field 3 10) $(ledger_field 3 11)"
 
+# Agent minutes from a fake session export (times in ms): a prompt with a
+# 10-minute tool call (an approval wait), then a wake-up by a finished
+# background command with two overlapping tool calls. Model time: 2 + 1 min.
+fake="$T/fake-sessions"
+mkdir -p "$fake/bin"
+cat > "$fake/list.json" <<EOF
+[{"id": "ses_a", "directory": "$P/worktrees/TASK-9"}, {"id": "ses_b", "directory": "$MAIN"}]
+EOF
+cat > "$fake/ses_a.json" <<'EOF'
+{"info": {"id": "ses_a", "cost": 0.1, "model": {"id": "vendor/m", "providerID": "openrouter"}},
+ "messages": [
+  {"type": "user", "time": {"created": 0}},
+  {"type": "assistant", "time": {"created": 1000}, "content": [
+    {"type": "tool", "time": {"created": 60000, "ran": 60000, "completed": 660000}}]},
+  {"type": "idle", "time": {"created": 720000}},
+  {"type": "synthetic", "time": {"created": 2000000}},
+  {"type": "assistant", "time": {"created": 2001000}, "content": [
+    {"type": "text", "text": "two calls"},
+    {"type": "tool", "time": {"created": 2030000, "ran": 2030000, "completed": 2090000}},
+    {"type": "tool", "time": {"created": 2060000, "ran": 2060000, "completed": 2120000}}]},
+  {"type": "idle", "time": {"created": 2150000}}]}
+EOF
+cat > "$fake/bin/opencode" <<EOF
+#!/usr/bin/env bash
+case "\$2" in
+    list) cat "$fake/list.json" ;;
+    export) cat "$fake/\$4.json" ;;
+esac
+EOF
+chmod +x "$fake/bin/opencode"
+(PATH="$fake/bin:$PATH" ledger_row "$MAIN" "$P/worktrees/TASK-9" TASK-9 interactive new 5 accepted "") >/dev/null
+check_eq "ledger: only the worktree's session" "ses_a" "$(ledger_field -1 6)"
+check_eq "ledger: agent minutes count wake-ups, not tool calls" "3.0" "$(ledger_field -1 8)"
+
 echo "# CMake profile from 09-check-profile.sh"
 # Stub cmake: --preset <name> configures into <worktree>/build/<name>, preset
 # "outside" into a folder next to the worktree; every call is logged.
