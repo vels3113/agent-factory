@@ -26,7 +26,9 @@ if os.path.exists(tsv):
         f = line.rstrip("\n").split("\t")
         if len(f) >= 6 and f[2] in ("check", "command") and f[5]:
             checks += 1
-            failed = int(f[4]) in (1, 2, 5) if f[2] == "check" else int(f[4]) != 0
+            # A command with no numeric exit (killed, timed out) didn't succeed.
+            code = int(f[4]) if f[4].lstrip("-").isdigit() else None
+            failed = code in (1, 2, 5) if f[2] == "check" else code != 0
             failures += failed
 models, providers, ids, cost, busy, tools, estimated = [], [], [], 0.0, [], [], 0
 for path in sorted(glob.glob(sdir + "/*.json")):

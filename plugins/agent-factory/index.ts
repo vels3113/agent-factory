@@ -135,7 +135,7 @@ export default Plugin.define({
       appendFileSync(join(journal, `${r.task}.md`),
         `- ${stamp(end)} command \`${r.command.replace(/\s+/g, " ")}\`: exit ${data.exit}, ${duration(end.getTime() - r.started)}, log: [${name}](../reports/${r.task}/commands/${name})\n`)
       appendFileSync(join(journal, `${r.task}.checks.tsv`),
-        [Math.floor(r.started / 1000), Math.floor(end.getTime() / 1000), "command", "", data.exit, r.sessionID, ""].join("\t") + "\n")
+        [Math.floor(r.started / 1000), Math.floor(end.getTime() / 1000), "command", "", Number.isInteger(data.exit) ? data.exit : "unknown", r.sessionID, ""].join("\t") + "\n")
     }
     // What the provider charged. A copy of the response is read in the
     // background: OpenCode waits for its hooks, so awaiting here would hold

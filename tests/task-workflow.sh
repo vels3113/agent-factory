@@ -226,11 +226,11 @@ cat > "$fake/ses_a.json" <<'EOF'
 EOF
 cp "$REPO/tests/stubs/opencode-sessions.sh" "$fake/bin/opencode"
 export FAKE_SESSIONS="$fake"
-printf '1\t2\tcheck\tdev\t0\tses_a\tt\n3\t4\tcommand\t\t3\tses_a\t\n5\t6\tcommand\t\t0\t\t\n' > "$journal/TASK-9.checks.tsv"
+printf '1\t2\tcheck\tdev\t0\tses_a\tt\n3\t4\tcommand\t\t3\tses_a\t\n5\t6\tcommand\t\t0\t\t\n7\t8\tcommand\t\tunknown\tses_a\t\n9\t10\tcommand\t\t\tses_a\t\n' > "$journal/TASK-9.checks.tsv"
 (PATH="$fake/bin:$PATH" ledger_row "$MAIN" "$P/worktrees/TASK-9" TASK-9 interactive new 5 accepted "") >/dev/null
 check_eq "ledger: only the worktree's session" "ses_a" "$(ledger_field -1 6)"
 check_eq "ledger: agent minutes count wake-ups, not tool calls" "3.0" "$(ledger_field -1 8)"
-check_eq "ledger: checks and wrapped commands as rounds, a non-zero command exit fails" "2 1" "$(ledger_field -1 10) $(ledger_field -1 11)"
+check_eq "ledger: checks and wrapped commands as rounds, a non-zero or missing command exit fails" "4 3" "$(ledger_field -1 10) $(ledger_field -1 11)"
 check_eq "ledger: no plugin cost rows: OpenCode's estimate, noted" "0.1000 cost: OpenCode estimate for 1 of 1 session(s)" "$(ledger_field -1 7) $(ledger_field -1 14)"
 printf '1\tses_a\tbuild\tprimary\topenrouter/vendor/m\tgen-1\t0.2\t10\t5\n2\tses_a\ttitle\ttitle\topenrouter/vendor/m\tgen-2\t0.05\t3\t1\n3\tses_b\tbuild\tprimary\topenrouter/vendor/m\tgen-3\t9\t1\t1\n' >> "$HOME/.agent-factory/costs.tsv"
 (PATH="$fake/bin:$PATH" ledger_row "$MAIN" "$P/worktrees/TASK-9" TASK-9 interactive new 5 accepted "") >/dev/null
