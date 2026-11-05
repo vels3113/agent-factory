@@ -133,6 +133,7 @@ Daily use:
 ```bash
 agent-task.sh start TASK-1234 "Short title"        # creates the worktree, opens OpenCode in it (with a prebuild); reruns reopen it
 agent-task.sh start --new "Short title" [--parent TASK-1234]   # local task: allocates VM-<n>, then starts it
+agent-task.sh add TASK-1234 "Short title"          # register a Taiga task in the journal only: no worktree, no OpenCode
 agent-task.sh new "Short title" [--parent TASK-1234]           # allocate VM-<n> only (agents use this)
 agent-task.sh done TASK-1234                        # after review: removes the worktree and the local branch
 agent-task.sh list                                  # journal index

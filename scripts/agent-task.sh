@@ -3,6 +3,8 @@
 # agent task journal. Task IDs: TASK-<n> (Taiga) or VM-<n> (local, numbered here).
 # Usage:
 #   agent-task.sh new "<title>" [--parent <id>]   allocate a VM-<n> task, print its ID
+#   agent-task.sh add TASK-<n> "<title>"          register a Taiga task in the journal only: no worktree,
+#                                                 no OpenCode (start opens it later)
 #   agent-task.sh start <id> ["<title>"]          create or reopen the worktree, open OpenCode in it
 #   agent-task.sh start --new "<title>" [--parent <id>]
 #   agent-task.sh done <id>                       archive the report, remove the worktree and
@@ -12,7 +14,7 @@ set -euo pipefail
 here="$(dirname "$(readlink -f "$0")")"
 source "$here/agent-lib.sh"
 
-usage() { sed -n '5,11p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 1; }
+usage() { sed -n '5,12p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 1; }
 
 load_project() {
     local env="$factory_dir/vm.env"
@@ -41,6 +43,23 @@ new_task() {
     if [[ -n "$parent" ]] && task_known "$parent"; then
         log_event "$parent" "side task [$id]($id.md): $title"
     fi
+    echo "$id"
+}
+
+# add_taiga_task TASK-<n> <title>: journal entry only; start creates the worktree later.
+add_taiga_task() {
+    local id="${1:-}" title="${2:-}"
+    [[ "$id" =~ ^TASK-[0-9]+$ ]] || { echo "Not a Taiga task ID: ${id:-<empty>} (TASK-<n>)" >&2; usage; }
+    init_journal
+    exec 9>"$index.lock"
+    flock 9
+    if task_known "$id"; then
+        flock -u 9
+        echo "$id is already in the journal." >&2
+        return 0
+    fi
+    add_task "$id" "$title"
+    flock -u 9
     echo "$id"
 }
 
@@ -127,6 +146,7 @@ done_task() {
 }
 
 case "${1:-}" in
+    add) shift; add_taiga_task "$@" ;;
     new) shift; new_task "$@" ;;
     start) shift; start_task "$@" ;;
     done) shift; done_task "$@" ;;
