@@ -163,7 +163,7 @@ Build time, CPU and disk space on the VM are an open problem: there is no known 
 
 | Script | Purpose |
 | --- | --- |
-| `agent-task.sh` | Task lifecycle. Done (interactive): `start`/`new`/`done`/`list`, worktree via OpenCode, journal, report archive. To do (background): pre-flight, agent run, push, Jenkins polling, repair, ledger entry, limits |
+| `agent-task.sh` | Task lifecycle. Done (interactive): `start`/`new`/`add`/`push`/`done`/`list`, worktree via OpenCode, journal, report archive, one logged push per attempt. To do (background): pre-flight, agent run, orchestrator push, Jenkins polling, repair, ledger entry, limits |
 | `agent-check.sh` | Done: generic wrapper around the repo's CI procedure, described in a check profile (`bootstrap/09-check-profile.sh`): presets, build, test suites, output parsers. Adds bounded output (first errors, failing tests), a diff filter (no build when no build file changed), prebuild while the session starts, VM-wide build slots, logs. It runs the prebuild and serves you. Later, if the data warrants it: a result cache (check-result-cache.md), mapping changed files to targets and tests |
 | `plugins/agent-factory` | Done: OpenCode plugin that wraps the agents' build and test commands without changing them: environment, full output log, journal line, ledger row ([ADR 0001](adr/0001-plugin-wraps-agent-commands.md)). Proposed: build slots and low priority ([proposal-build-slots.md](proposal-build-slots.md)), approval waits ([proposal-approval-waits.md](proposal-approval-waits.md)) |
 | `jenkins-status.sh` | Build status, commit SHA, failed stage, bounded error excerpt |
@@ -176,7 +176,7 @@ Phase 1 uses existing dashboards plus a lightweight ledger; no Grafana, Langfuse
 
 - **OpenRouter Activity page:** cost by key, model and provider; tokens and cache behavior.
 - **`opencode stats`:** token usage and cost per session and model. The cost is OpenCode's estimate from list prices, not what OpenRouter charged.
-- **Task ledger:** CSV, one row per task written by `agent-task.sh done`: cost as OpenRouter charged it, recorded per model response by the plugin (`~/.agent-factory/costs.tsv`; OpenCode's estimate only where no charge was recorded, noted in the row); session data (model, agent minutes: the model's working time, without tool calls, so without approval waits and local checks) from OpenCode, local check rounds and failures from the plugin's wrapped commands and `agent-check.sh`, human minutes and outcome asked at the prompt. Jenkins rounds are added with the background loop (Phase 1b). Build time and disk use go to the task journal, not the ledger.
+- **Task ledger:** CSV, one row per task written by `agent-task.sh done`: cost as OpenRouter charged it, recorded per model response by the plugin (`~/.agent-factory/costs.tsv`; OpenCode's estimate only where no charge was recorded, noted in the row); session data (model, agent minutes: the model's working time, without tool calls, so without approval waits and local checks) from OpenCode, local check rounds and failures from the plugin's wrapped commands and `agent-check.sh`, human minutes and outcome asked at the prompt. Jenkins rounds from the pushes `agent-task.sh push` logged, one Jenkins run each; the build results come with `jenkins-status.sh` (Phase 1b). Build time and disk use go to the task journal, not the ledger.
 
 **Budget controls:**
 

@@ -70,8 +70,8 @@ ledger_header="task_id,date,mode,origin,model,provider,session_id,api_cost_usd,a
 # its approval prompt, so the human's wait is never counted. Check rounds come
 # from journal/<id>.checks.tsv, counting only rows OpenCode ran: agent-check.sh
 # checks (failed: exit 1, 2 or 5) and the build and test commands the plugin
-# wrapped (failed: any non-zero exit). Jenkins rounds stay empty until that
-# script exists. Cost: what the provider charged, from the plugin's costs.tsv
+# wrapped (failed: any non-zero exit). Jenkins rounds: the pushes agent-task.sh
+# push logged in journal/<id>.md, one Jenkins run each; empty when none was. Cost: what the provider charged, from the plugin's costs.tsv
 # rows for these sessions; a session without rows (no plugin, or a provider
 # that reports no cost) counts with OpenCode's estimate from list prices, and
 # the notes say so. Mode: <mode>, or background when the plugin recorded the
@@ -89,7 +89,7 @@ ledger_row() {
         (cd "$main" && opencode session export --standalone "$sid") > "$sessions/$sid.json"
     done
     rm -f "$sessions/list.json"
-    python3 -I "$lib_dir/ledger_row.py" "$ledger" "$sessions" "$journal_dir/$3.checks.tsv" "$factory_dir/costs.tsv" "$3" "$4" "$5" "$6" "$7" "$8"
+    python3 -I "$lib_dir/ledger_row.py" "$ledger" "$sessions" "$journal_dir/$3.checks.tsv" "$journal_dir/$3.md" "$factory_dir/costs.tsv" "$3" "$4" "$5" "$6" "$7" "$8"
     rm -rf "$sessions"
 }
 

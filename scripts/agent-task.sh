@@ -7,6 +7,8 @@
 #                                                 no OpenCode (start opens it later)
 #   agent-task.sh start <id> ["<title>"]          create or reopen the worktree, open OpenCode in it
 #   agent-task.sh start --new "<title>" [--parent <id>]
+#   agent-task.sh push <id>                       push agent/<id> to origin once (starts one Jenkins
+#                                                 run) and log it; done counts these as Jenkins rounds
 #   agent-task.sh done <id>                       archive the report, remove the worktree and
 #                                                 the branch (kept if it has unpushed commits)
 #   agent-task.sh list                            print the journal index
@@ -14,7 +16,7 @@ set -euo pipefail
 here="$(dirname "$(readlink -f "$0")")"
 source "$here/agent-lib.sh"
 
-usage() { sed -n '5,12p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 1; }
+usage() { sed -n '5,14p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 1; }
 
 load_project() {
     local env="$factory_dir/vm.env"
@@ -101,6 +103,35 @@ start_task() {
     log_event "$id" "session ended"
 }
 
+# push_task <id>: push the task branch to origin/agent/<id>, the branch the
+# multibranch pipeline builds. Every push starts a Jenkins run, so it pushes only
+# committed work, only when the remote branch differs, never with --force; each
+# push is a journal line "pushed agent/<id> at <sha>" that done counts.
+# Agents may not run it (deny rule in templates/opencode.jsonc).
+push_task() {
+    local id="${1:-}"
+    valid_id "$id" || usage
+    task_known "$id" || { echo "$id is not in the journal." >&2; exit 1; }
+    load_project
+    local wt="$worktrees/$id" branch="agent/$id" sha remote
+    if [[ -d "$wt" && -n "$(git -C "$wt" status --porcelain)" ]]; then
+        echo "$wt has uncommitted changes; commit or discard them first." >&2
+        exit 1
+    fi
+    sha="$(git -C "$main" rev-parse -q --verify "refs/heads/$branch")" \
+        || { echo "No local branch $branch." >&2; exit 1; }
+    remote="$(git -C "$main" ls-remote origin "refs/heads/$branch" | cut -f 1)" \
+        || { echo "Cannot reach origin." >&2; exit 1; }
+    if [[ "$remote" == "$sha" ]]; then
+        echo "origin/$branch is already at ${sha:0:8}; nothing pushed."
+        return 0
+    fi
+    git -C "$main" push origin "refs/heads/$branch:refs/heads/$branch" \
+        || { echo "Push failed; nothing logged." >&2; exit 1; }
+    log_event "$id" "pushed $branch at ${sha:0:8}"
+    echo "Pushed $branch at $sha"
+}
+
 done_task() {
     local id="${1:-}"
     valid_id "$id" || usage
@@ -149,6 +180,7 @@ case "${1:-}" in
     add) shift; add_taiga_task "$@" ;;
     new) shift; new_task "$@" ;;
     start) shift; start_task "$@" ;;
+    push) shift; push_task "$@" ;;
     done) shift; done_task "$@" ;;
     list) cat "$index" 2>/dev/null || echo "No tasks yet." ;;
     *) usage ;;

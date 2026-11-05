@@ -73,6 +73,21 @@ check "restart a done task" agent-task.sh start TASK-1
 check "restart reuses the existing branch" grep -q 'on existing branch agent/TASK-1' "$journal/TASK-1.md"
 check_eq "restarted task keeps its commits" "local work" "$(git -C "$wt" log -1 --format=%s)"
 
+echo "# push"
+pushes() { grep -c 'pushed agent/TASK-1 at ' "$journal/TASK-1.md"; }
+touch "$wt/dirty"
+check "push refuses uncommitted changes" bash -c "! agent-task.sh push TASK-1 2>/dev/null"
+rm "$wt/dirty"
+check "push TASK-1" agent-task.sh push TASK-1
+check_eq "origin has agent/TASK-1 at the local commit" "$(git -C "$wt" rev-parse HEAD)" "$(git -C "$T/origin.git" rev-parse refs/heads/agent/TASK-1)"
+check "push logged with its commit" grep -q "pushed agent/TASK-1 at $(git -C "$wt" rev-parse HEAD | cut -c1-8)" "$journal/TASK-1.md"
+check "unchanged branch: nothing pushed" bash -c "agent-task.sh push TASK-1 | grep -q 'already at'"
+check_eq "unchanged branch: nothing logged" 1 "$(pushes)"
+git -C "$wt" commit -q --allow-empty -m "repair"
+agent-task.sh push TASK-1 >/dev/null 2>&1
+check_eq "each new commit pushed is one more round" 2 "$(pushes)"
+check_eq "ledger: no push logged, Jenkins rounds empty" "" "$(ledger_field 1 12)"
+
 echo "# agent-check.sh"
 check "agent-check.sh on PATH" command -v agent-check.sh
 # ac <dir> [args...]: run the check in <dir>; prints the exit code, output in $T/ac.out.
@@ -235,6 +250,12 @@ check_eq "ledger: no plugin cost rows: OpenCode's estimate, noted" "0.1000 cost:
 printf '1\tses_a\tbuild\tprimary\topenrouter/vendor/m\tgen-1\t0.2\t10\t5\n2\tses_a\ttitle\ttitle\topenrouter/vendor/m\tgen-2\t0.05\t3\t1\n3\tses_b\tbuild\tprimary\topenrouter/vendor/m\tgen-3\t9\t1\t1\n' >> "$HOME/.agent-factory/costs.tsv"
 (PATH="$fake/bin:$PATH" ledger_row "$MAIN" "$P/worktrees/TASK-9" TASK-9 interactive new 5 accepted "") >/dev/null
 check_eq "ledger: the provider's charge from the plugin's rows, this task's sessions only" "0.2500 " "$(ledger_field -1 7) $(ledger_field -1 14)"
+printf '4\tses_a\tbuild\tprimary\topenrouter/vendor/m\tgen-4\t0\t1\t1\tOPENROUTER_KEY_BACKGROUND\tbackground\n' >> "$HOME/.agent-factory/costs.tsv"
+(PATH="$fake/bin:$PATH" ledger_row "$MAIN" "$P/worktrees/TASK-9" TASK-9 interactive new 5 accepted "") >/dev/null
+check_eq "ledger: background mode and key from the plugin's rows" "background key: OPENROUTER_KEY_BACKGROUND" "$(ledger_field -1 2) $(ledger_field -1 14)"
+printf -- '- 2026-01-01 10:00 pushed agent/TASK-9 at 0123abcd\n- 2026-01-01 11:00 pushed agent/TASK-90 at 4567abcd\n- 2026-01-01 12:00 pushed agent/TASK-9 at 89abcdef\n' > "$journal/TASK-9.md"
+(PATH="$fake/bin:$PATH" ledger_row "$MAIN" "$P/worktrees/TASK-9" TASK-9 interactive new 5 accepted "") >/dev/null
+check_eq "ledger: Jenkins rounds, one per push agent-task.sh logged" 2 "$(ledger_field -1 12)"
 
 echo "# plugin: agents' build and test commands"
 # plugins/agent-factory with a stand-in model (tests/stub-model.py) that runs

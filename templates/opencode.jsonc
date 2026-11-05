@@ -61,6 +61,8 @@
     { "action": "shell", "resource": "git worktree *", "effect": "deny" },
     { "action": "shell", "resource": "agent-task.sh start *", "effect": "deny" },
     { "action": "shell", "resource": "agent-task.sh done *", "effect": "deny" },
+    // Pushing starts a Jenkins run: the developer or orchestrator decides.
+    { "action": "shell", "resource": "agent-task.sh push *", "effect": "deny" },
 
     // Generated files and build output: enforced only here, not repeated in AGENTS.md.
     // TODO: replace with the real paths from AGENTS.md (filled by /init), and add
