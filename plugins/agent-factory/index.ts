@@ -7,6 +7,17 @@
 //             starts with one
 //   env       environment variables set for those commands; ${VAR} in a value
 //             is the command's current value, e.g. "PATH": "/usr/lib/ccache:${PATH}"
+//   keys      OpenRouter key per mode and agent, as names of lines in
+//             $AGENT_SECRETS_DIR/openrouter.env (bootstrap/01-), never the keys:
+//             { "interactive": { "*": null }, "background": { "*": "OPENROUTER_KEY_BACKGROUND" } }
+//             The mode is AGENT_FACTORY_MODE in OpenCode's environment (default
+//             interactive; the background runner sets it on its opencode run
+//             --standalone). Each request to the openrouter provider gets
+//             keys[mode][agent], else keys[mode]["*"]; the agent is the one
+//             asking: build, explore, ci-fix, title, ... A name sets the request's
+//             key; null or no entry keeps the key OpenCode has (/connect). A name
+//             missing from the file fails closed: the request goes out with a key
+//             OpenRouter rejects, never with the /connect key. See adr/0002.
 // Per wrapped command in a task worktree (<project>/worktrees/<task-id>):
 //   - a running prebuild of the worktree is stopped first (see stopPrebuild)
 //   - its full output copied to reports/<task-id>/commands/<time>-<shell-id>.log
@@ -18,7 +29,8 @@
 // OpenRouter charged. The plugin reads each model response's usage report and,
 // when it has a cost (OpenRouter's usage accounting, which OpenCode requests),
 // appends a row to costs.tsv: time, session, agent, kind (primary, title, ...),
-// provider/model, generation ID, cost in USD, prompt and completion tokens.
+// provider/model, generation ID, cost in USD, prompt and completion tokens,
+// key (its name from "keys", or "connect") and mode.
 // agent-task.sh done sums these rows for the ledger.
 // OpenCode 2.1.3 behavior this relies on is checked in tests/task-workflow.sh.
 import { Plugin } from "@opencode/plugin"
@@ -31,6 +43,9 @@ type Pending = { command: string; sessionID: string; agent: string; envSet: bool
 type Running = { command: string; sessionID: string; task: string; file: string; started: number }
 
 const factoryDir = process.env.AGENT_FACTORY_DIR || join(homedir(), ".agent-factory")
+const secretsFile = join(process.env.AGENT_SECRETS_DIR || join(homedir(), ".config", "agent-secrets"), "openrouter.env")
+const keyProvider = "openrouter"
+const mode = process.env.AGENT_FACTORY_MODE || "interactive"
 const taskPattern = /\/worktrees\/((?:TASK|VM)-\d+)(?=\/|$)/
 const worktreePattern = /^(.*\/worktrees\/(?:TASK|VM)-\d+)(?=\/|$)/
 
@@ -73,6 +88,33 @@ function usageOf(body: string): { id?: string; usage?: any } {
   return { id, usage }
 }
 
+// NAME=value lines, as bootstrap/01-store-openrouter-keys.sh writes them.
+function readSecrets(file: string): Map<string, string> {
+  const keys = new Map<string, string>()
+  for (const line of readFileSync(file, "utf8").split("\n")) {
+    const m = /^([A-Za-z_][\w-]*)=(.+)$/.exec(line.trim())
+    if (m) keys.set(m[1], m[2])
+  }
+  return keys
+}
+
+// The key for this process's mode: name (or "connect" for OpenCode's own key)
+// and value per agent. Missing names get a value OpenRouter rejects.
+function keyChooser(table: Record<string, Record<string, string | null>> | undefined) {
+  const forMode = table?.[mode] ?? {}
+  const names = [...new Set(Object.values(forMode).filter((n): n is string => typeof n === "string" && n !== ""))]
+  let secrets = new Map<string, string>()
+  if (names.length) {
+    try { secrets = readSecrets(secretsFile) } catch (err) { console.error(`agent-factory plugin: keys: cannot read ${secretsFile}:`, err) }
+    for (const n of names) if (!secrets.has(n)) console.error(`agent-factory plugin: keys: ${n} (mode ${mode}) is not in ${secretsFile}; its requests will be rejected`)
+  }
+  return (agent: string): { name: string; value?: string } => {
+    const name = forMode[agent] ?? forMode["*"]
+    if (typeof name !== "string" || name === "") return { name: "connect" }
+    return { name, value: secrets.get(name) ?? `agent-factory-missing-key-${name}` }
+  }
+}
+
 function matches(command: string, prefixes: string[]): boolean {
   return command.split(/&&|\|\||[;|\n]/).some((part) => {
     const p = part.trim()
@@ -83,7 +125,10 @@ function matches(command: string, prefixes: string[]): boolean {
 export default Plugin.define({
   id: "agent-factory",
   async setup(ctx) {
-    const options = ((ctx as any).options ?? {}) as { commands?: string[]; env?: Record<string, string> }
+    const options = ((ctx as any).options ?? {}) as {
+      commands?: string[]; env?: Record<string, string>; keys?: Record<string, Record<string, string | null>>
+    }
+    const keyFor = keyChooser(options.keys)
     const prefixes = (options.commands ?? []).filter((c) => c && !c.startsWith("TODO"))
     const env = options.env ?? {}
     const pending: Pending[] = []
@@ -137,6 +182,12 @@ export default Plugin.define({
       appendFileSync(join(journal, `${r.task}.checks.tsv`),
         [Math.floor(r.started / 1000), Math.floor(end.getTime() / 1000), "command", "", Number.isInteger(data.exit) ? data.exit : "unknown", r.sessionID, ""].join("\t") + "\n")
     }
+    // The key per mode and agent: set on each request before it is sent.
+    await ctx.session.hook("http.request", (event: any) => {
+      if (event.model?.providerID !== keyProvider) return
+      const key = keyFor(String(event.agent ?? ""))
+      if (key.value !== undefined) event.request.headers.set("authorization", `Bearer ${key.value}`)
+    })
     // What the provider charged. A copy of the response is read in the
     // background: OpenCode waits for its hooks, so awaiting here would hold
     // back the streamed answer.
@@ -144,12 +195,13 @@ export default Plugin.define({
       if (typeof event.response?.clone !== "function") return
       const time = Math.floor(Date.now() / 1000)
       const model = `${event.model?.providerID ?? ""}/${event.model?.id ?? ""}`
+      const key = event.model?.providerID === keyProvider ? keyFor(String(event.agent ?? "")).name : ""
       event.response.clone().text().then((body: string) => {
         const { id, usage } = usageOf(body)
         if (typeof usage?.cost !== "number") return
         mkdirSync(factoryDir, { recursive: true })
         appendFileSync(join(factoryDir, "costs.tsv"), [time, event.sessionID, event.agent ?? "", event.kind ?? "", model,
-          id ?? "", usage.cost, usage.prompt_tokens ?? "", usage.completion_tokens ?? ""].join("\t") + "\n")
+          id ?? "", usage.cost, usage.prompt_tokens ?? "", usage.completion_tokens ?? "", key, mode].join("\t") + "\n")
       }).catch((err: unknown) => console.error("agent-factory plugin: response cost:", err))
     })
 

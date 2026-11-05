@@ -83,7 +83,8 @@ oc_api() { (cd "$MAIN" && timeout "$OC_TIMEOUT" opencode api --standalone "$@");
 
 # stub_model: start tests/stub-model.py and add it to the global config as
 # provider "stub" (model stub/stub), so sessions make scripted tool calls
-# without a real model.
+# without a real model. The openrouter provider points at it too, so requests
+# on openrouter/<model> reach the stub (and its requests.log), never OpenRouter.
 stub_model() {
     mkdir -p "$T/stub"
     python3 -I "$REPO/tests/stub-model.py" "$T/stub" > "$T/stub/server.log" 2>&1 &
@@ -99,19 +100,21 @@ stub_model() {
       "package": "@opencode/ai/providers/openai-compatible",
       "settings": { "baseURL": "http://127.0.0.1:$(cat "$T/stub/port")/v1", "apiKey": "stub" },
       "models": { "stub": { "name": "Stub" } }
-    }
+    },
+    "openrouter": { "settings": { "baseURL": "http://127.0.0.1:$(cat "$T/stub/port")/api/v1" } }
   }
 }
 EOF
 }
 stop_stub_model() { [[ -s "$T/stub/pid" ]] && kill "$(cat "$T/stub/pid")" 2>/dev/null; return 0; }
 # stub_run <dir> <steps-json>: one session in <dir> whose model makes these tool
-# calls (tests/stub-model.py), permissions approved. Stdin must not be a pipe or
+# calls (tests/stub-model.py), permissions approved. STUB_RUN_MODEL: the model
+# (default stub/stub). Stdin must not be a pipe or
 # terminal: `opencode run` would wait for it. Output in $T/stub/run.out.
 stub_run() {
     local rc=0
     echo "$2" > "$T/stub/script.json"
-    (cd "$1" && timeout "$OC_TIMEOUT" opencode run --standalone --auto -m stub/stub go) < /dev/null > "$T/stub/run.out" 2>&1 || rc=$?
+    (cd "$1" && timeout "$OC_TIMEOUT" opencode run --standalone --auto -m "${STUB_RUN_MODEL:-stub/stub}" go) < /dev/null > "$T/stub/run.out" 2>&1 || rc=$?
     ((rc == 0)) || { echo "  (stub session in $1 failed with exit $rc)"; stub_diag; }
 }
 # stub_diag: what to look at when a stub session didn't do what a check expects

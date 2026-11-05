@@ -43,6 +43,7 @@ These decisions were settled in the design discussion; reopen only with a reason
 | Agents run on the dev VM | Git and Jenkins are internal; the VM runs 24/7 | Cloud-hosted background agents |
 | Split agents by task difficulty, not by workflow | Cost savings come from model routing; workflow data does not exist yet | Workflow-specific agents from day 1 |
 | OpenRouter for billing in the trial | One $10 top-up covers all providers; per-key limits | Direct provider accounts, LiteLLM gateway (deferred to Phase 2) |
+| The plugin chooses the OpenRouter key per request, by mode (`AGENT_FACTORY_MODE`, set by the background runner) and agent | OpenCode keeps one active key per provider for the whole Unix user, and subagents bill that key whatever `-m` says; the hook covers every request, subagents and titles included, and keeps the built-in provider's catalog data | `opencode auth switch` (user-wide); `OPENROUTER_API_KEY` or config `apiKey` (the stored key wins); a provider ID per key (no catalog data, every model line changes); keys separated only by the restricted Unix user (a security measure; its sessions are out of reach of the ledger) |
 | Pay per token for the trial | Small, controlled spend to compare with the subscription | Subscription plans ($100+ upfront) |
 | Jenkins is the authoritative verification | Matches team CI; lighter local checks between runs | Local-only verification |
 | The LLM never waits on Jenkins | Polling loops and expired prompt caches waste tokens | Agent polling CI inside its session |
@@ -63,7 +64,7 @@ OpenCode + OpenRouter + `AGENTS.md` + Bash orchestration; no other services in P
 | Billing and routing | OpenRouter | One account for many providers; spend visible per key, model and provider. |
 | Instructions | `AGENTS.md` | Portable across tools. Includes a short codebase map (architecture, key directories, build entry points). Permissions are enforced in tool config, not in this file. Kept outside the project repo at `~/<project>/instructions/AGENTS.md` and loaded through the [`instructions`](https://opencode.ai/v2/docs/instructions/) key in `~/<project>/opencode.jsonc`; drafted and refreshed with OpenCode `/init`. |
 | Code navigation | clangd + `compile_commands.json` | Optional at first if generating the compilation database is hard. CMake: `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON`; Make: `bear -- make`. |
-| Orchestration | Bash scripts, one OpenCode plugin | Task lifecycle, Git, Jenkins polling, retries, budget checks. The plugin (TypeScript) only wraps the agents' build and test commands. |
+| Orchestration | Bash scripts, one OpenCode plugin | Task lifecycle, Git, Jenkins polling, retries, budget checks. The plugin (TypeScript) wraps the agents' build and test commands, records the charged cost, and chooses the OpenRouter key per mode and agent. |
 | Isolation | Git worktree + branch per background task | Layout: `~/<project>/main/` (repo), `~/<project>/worktrees/<task-id>/` (branch `agent/<task-id>`), with the OpenCode config and `AGENTS.md` in `~/<project>/`. Build-directory layout decided by iteration (section 8). |
 
 ## 5. Agents, agent classes and model tiers
@@ -184,7 +185,7 @@ Phase 1 uses existing dashboards plus a lightweight ledger; no Grafana, Langfuse
 | Interactive | $4 |
 | Background | $5 |
 
-Disable automatic top-ups; enforce per-task spend limits in the orchestrator.
+Disable automatic top-ups; enforce per-task spend limits in the orchestrator. The plugin's `keys` option sends background runs' requests with the background key and leaves interactive sessions on the key connected in OpenCode; `costs.tsv` records the key name of each request.
 
 **Ledger fields per task:** task ID, type (interactive/background, new/replayed), model and provider, session ID, API cost, agent working minutes, human hands-on minutes, local check rounds, local check failures, Jenkins rounds, outcome (accepted / reworked / failed).
 

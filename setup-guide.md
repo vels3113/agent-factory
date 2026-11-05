@@ -124,7 +124,7 @@ bootstrap/08-task-workflow.sh ~/<project> lemon
 
 - Writes `BASE_BRANCH` to `~/<project>/agent.env`; adds `.agent/` to `main/.git/info/exclude`; links `agent-task.sh`, `agent-check.sh` and `model-suggest.sh` (step 10) into `~/.local/bin`.
 - Registers [scripts/agent-worktree-setup.sh](scripts/agent-worktree-setup.sh) as OpenCode's project start command. OpenCode runs it in every worktree it creates, whether you, the script or an agent asked for it. It moves the worktree from a detached HEAD to `agent/<task-id>` (from `origin/<base>`, no upstream) and rejects names that are not task IDs or unallocated `VM-<n>` IDs.
-- A layout created before this step needs `"worktree": { "directory": "../worktrees" }` and the `"plugins"` entry for `plugins/agent-factory` in `~/<project>/opencode.jsonc` (see [templates/opencode.jsonc](templates/opencode.jsonc)); the script warns if either is missing.
+- A layout created before this step needs `"worktree": { "directory": "../worktrees" }` and the `"plugins"` entry (with its `keys` option) for `plugins/agent-factory` in `~/<project>/opencode.jsonc` (see [templates/opencode.jsonc](templates/opencode.jsonc)); the script warns if either is missing.
 
 Then set up the check profile (step 9).
 
@@ -153,6 +153,7 @@ Agents' builds and tests: agents run the repo's own build and test commands from
 
 - `commands`: a command is wrapped when any part of it (split at `&&`, `||`, `;`, `|`) starts with one of these prefixes, so `cd build && ctest -R x` matches `"ctest"`. Only agents' tool calls are wrapped, not your own `!` commands.
 - `env`: environment variables set for the wrapped commands only. The commands themselves run unchanged. `${VAR}` in a value is the command's current value.
+- `keys`: the OpenRouter key per mode and agent, as names of lines in `~/.config/agent-secrets/openrouter.env` (step 1), for example `{ "interactive": { "*": null }, "background": { "*": "OPENROUTER_KEY_BACKGROUND" } }`. The mode is `AGENT_FACTORY_MODE` in OpenCode's environment (default `interactive`; background runs set `background`). Each request to the `openrouter` provider, subagents' and title requests included, gets `keys[mode][agent]`, else `keys[mode]["*"]`; `null` keeps the key connected in step 5. A name missing from the file makes that mode's requests fail instead of falling back. `costs.tsv` records each request's key name and mode, and `done` writes mode `background` for a task the plugin recorded in that mode.
 - Per wrapped command in a task worktree: the full output in `reports/<task-id>/commands/`, a journal line with exit code and duration that links it, and a `checks.tsv` row for the ledger. The agent gets OpenCode's own result: the last 2,000 lines of output and the path of the full output.
 - Not yet: build slots and low priority for these commands ([proposal-build-slots.md](proposal-build-slots.md)); approval waits ([proposal-approval-waits.md](proposal-approval-waits.md)).
 

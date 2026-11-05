@@ -120,7 +120,7 @@ done_task() {
             read -r -p "Outcome (accepted/reworked/failed): " outcome || exit 1
         done
         read -r -p "Notes (optional): " notes || true
-        # Mode: interactive until the background loop passes its own.
+        # Mode: interactive, or background if the plugin recorded the sessions so.
         ledger_row "$main" "$wt" "$id" interactive "${origin:-new}" "$human" "$outcome" "$notes"
         log_event "$id" "ledger row: $outcome"
         [[ -d "$wt" ]] && log_event "$id" "disk used: $(du -sk "$wt" | awk '{printf "%.2f", $1 / 1048576}') GB (worktree and build output)"

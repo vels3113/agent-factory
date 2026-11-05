@@ -2,7 +2,8 @@
 model. Each chat request with tools gets the next step of <dir>/script.json: a
 tool call {"tool": "shell", "args": {...}} or text {"text": "..."}; when the
 script is empty it answers "done", which ends the turn. Requests without tools
-(session titles) get plain text.
+(session titles) get plain text. Each request is logged to <dir>/requests.log
+as a JSON line: its Authorization header and model.
 Usage: stub-model.py <dir>   (writes the port it listens on to <dir>/port)
 """
 import json
@@ -38,6 +39,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        with open(os.path.join(DIR, "requests.log"), "a") as f:
+            f.write(json.dumps({"auth": self.headers.get("Authorization", ""), "model": req.get("model")}) + "\n")
         step = next_step() if req.get("tools") else {"text": "stub"}
         if "tool" in step:
             call = {"index": 0, "id": f"call_{time.time_ns()}", "type": "function",

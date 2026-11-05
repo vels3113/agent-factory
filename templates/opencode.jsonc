@@ -25,10 +25,19 @@
   // covers configuring) and "ctest". If ccache is installed, add it to "env":
   // CMAKE_C_COMPILER_LAUNCHER and CMAKE_CXX_COMPILER_LAUNCHER set to "ccache"
   // (CMake), or "PATH": "/usr/lib/ccache:${PATH}" (Make).
+  // "keys": the OpenRouter key per mode and agent, as names of lines in
+  // ~/.config/agent-secrets/openrouter.env (bootstrap/01-), never keys. Mode:
+  // AGENT_FACTORY_MODE in OpenCode's environment, set to "background" by the
+  // background runner; interactive otherwise. null keeps OpenCode's own key
+  // (/connect). Per agent: e.g. "explore": "OPENROUTER_KEY_CHEAP" next to "*".
+  // A name missing from the file fails closed (adr/0002-openrouter-key-per-mode.md).
   "plugins": [
     {
       "package": "TODO_PLUGIN_PATH",
-      "options": { "commands": ["TODO_BUILD_COMMAND", "TODO_TEST_COMMAND"], "env": {} },
+      "options": {
+        "commands": ["TODO_BUILD_COMMAND", "TODO_TEST_COMMAND"], "env": {},
+        "keys": { "interactive": { "*": null }, "background": { "*": "OPENROUTER_KEY_BACKGROUND" } },
+      },
     },
   ],
 

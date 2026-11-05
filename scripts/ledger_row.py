@@ -4,7 +4,7 @@ Usage: ledger_row.py <ledger.csv> <sessions-dir> <checks.tsv> <costs.tsv>
                      <task> <mode> <origin> <human-min> <outcome> <notes>
   sessions-dir  one OpenCode session export (JSON) per session of the task
   checks.tsv    journal/<task>.checks.tsv: agent-check.sh runs and wrapped commands
-  costs.tsv     the plugin's rows: what the provider charged per model response
+  costs.tsv     the plugin's rows: what the provider charged per model response,
 """
 import csv
 import datetime
@@ -15,11 +15,15 @@ import sys
 
 ledger, sdir, tsv, costs_tsv, task, mode, origin, human, outcome, notes = sys.argv[1:]
 charged = {}  # session -> cost the provider reported, from the plugin
+keys, modes = {}, {}  # session -> key names and modes it ran under (newer rows only)
 if os.path.exists(costs_tsv):
     for line in open(costs_tsv):
         f = line.rstrip("\n").split("\t")
         if len(f) >= 7:
             charged[f[1]] = charged.get(f[1], 0.0) + float(f[6])
+        if len(f) >= 11:
+            if f[9]: keys.setdefault(f[1], set()).add(f[9])
+            if f[10]: modes.setdefault(f[1], set()).add(f[10])
 checks, failures = 0, 0  # agent-check.sh checks and wrapped commands OpenCode ran
 if os.path.exists(tsv):
     for line in open(tsv):
@@ -61,6 +65,11 @@ for s, e in sorted(tools):
     else: merged.append([s, e])
 busy_ms = sum(e - s for s, e in busy)
 busy_ms -= sum(max(0, min(e, te) - max(s, ts)) for s, e in busy for ts, te in merged)
+used_keys = sorted(set().union(*(keys.get(i, set()) for i in ids)))
+if "background" in set().union(*(modes.get(i, set()) for i in ids)):
+    mode = "background"
+if used_keys and used_keys != ["connect"]:
+    notes = (notes + "; " if notes else "") + "key: " + "+".join(used_keys)
 if estimated:
     notes = (notes + "; " if notes else "") + f"cost: OpenCode estimate for {estimated} of {len(ids)} session(s)"
 row = [task, datetime.date.today().isoformat(), mode, origin, "+".join(models), "+".join(providers),

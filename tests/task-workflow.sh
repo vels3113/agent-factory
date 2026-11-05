@@ -267,6 +267,34 @@ check "costs.tsv: the charge of each response, agent and title requests" bash -c
 check "costs.tsv: rows for the sessions that ran the wrapped commands" bash -c "cut -f 6 '$journal/TASK-5.checks.tsv' | grep '^ses_' | sort -u | while read -r s; do grep -qP \"^\\d+\\t\$s\\t\" '$HOME/.agent-factory/costs.tsv' || exit 1; done"
 git -C "$MAIN" worktree remove --force "$wt5"
 
+echo "# plugin: OpenRouter key per mode and agent"
+# openrouter/<model> requests reach the stub (tests/lib.sh), which logs each
+# request's key. OpenCode's own (/connect) key: a stored credential.
+mkdir -p -m 700 "$HOME/.config/agent-secrets"
+printf 'OPENROUTER_KEY_BACKGROUND=sk-or-bg-test\nOPENROUTER_KEY_CHEAP=sk-or-cheap-test\n' > "$HOME/.config/agent-secrets/openrouter.env"
+printf '[{"id": "cred_test", "integrationID": "openrouter", "label": "connect", "active": true, "value": {"type": "key", "key": "sk-or-connect-test"}}]' \
+    | (cd "$MAIN" && opencode auth import --standalone) >/dev/null
+sed -i 's|"background": { "\*": "OPENROUTER_KEY_BACKGROUND" }|"background": { "*": "OPENROUTER_KEY_BACKGROUND", "explore": "OPENROUTER_KEY_CHEAP", "title": "OPENROUTER_KEY_MISSING" }|' "$P/opencode.jsonc"
+check "template: keys option, background key by default" grep -q '"explore": "OPENROUTER_KEY_CHEAP"' "$P/opencode.jsonc"
+requests() { python3 -I -c 'import json, sys; [print(json.loads(l)["auth"]) for l in open(sys.argv[1])]' "$T/stub/requests.log" | sort -u | tr '\n' ' '; }
+cost_rows() { tail -n "+$(( $1 + 1 ))" "$HOME/.agent-factory/costs.tsv" | awk -F'\t' '{ print $3, $10, $11 }' | sort -u | tr '\n' ' '; }
+: > "$T/stub/requests.log"; n="$(wc -l < "$HOME/.agent-factory/costs.tsv")"
+STUB_RUN_MODEL=openrouter/z-ai/glm-5.3 stub_run "$MAIN" '[]'
+check_eq "interactive: null keeps OpenCode's key, title request included" "Bearer sk-or-connect-test " "$(requests)"
+check_eq "costs.tsv: key and mode of each request" "build connect interactive title connect interactive " "$(cost_rows "$n")"
+: > "$T/stub/requests.log"; n="$(wc -l < "$HOME/.agent-factory/costs.tsv")"
+AGENT_FACTORY_MODE=background STUB_RUN_MODEL=openrouter/z-ai/glm-5.3 \
+    stub_run "$MAIN" '[{"tool": "subagent", "args": {"agent": "explore", "description": "probe", "prompt": "say ok"}}]'
+check "background: the mode's key for the primary agent" grep -q '"Bearer sk-or-bg-test"' "$T/stub/requests.log"
+check "background: the subagent's own key" grep -q '"Bearer sk-or-cheap-test"' "$T/stub/requests.log"
+check "background: a name missing from the secrets file fails closed" grep -q '"Bearer agent-factory-missing-key-OPENROUTER_KEY_MISSING"' "$T/stub/requests.log"
+check "background: never OpenCode's key" bash -c "! grep -q 'connect-test' '$T/stub/requests.log'"
+check_eq "costs.tsv: key name per agent, background mode" \
+    "build OPENROUTER_KEY_BACKGROUND background explore OPENROUTER_KEY_CHEAP background title OPENROUTER_KEY_MISSING background " "$(cost_rows "$n")"
+check "secrets never written to costs.tsv" bash -c "! grep -q 'sk-or-' '$HOME/.agent-factory/costs.tsv'"
+stub_run "$MAIN" '[{"tool": "shell", "args": {"command": "agent-task.sh push TASK-1"}}]'
+check "template: agents may not push, even with --auto" grep -q 'denied: shell' "$T/stub/run.out"
+
 echo "# CMake profile from 09-check-profile.sh"
 # Stub cmake: --preset <name> configures into <worktree>/build/<name>, preset
 # "outside" into a folder next to the worktree; every call is logged.

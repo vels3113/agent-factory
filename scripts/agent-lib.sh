@@ -74,7 +74,9 @@ ledger_header="task_id,date,mode,origin,model,provider,session_id,api_cost_usd,a
 # script exists. Cost: what the provider charged, from the plugin's costs.tsv
 # rows for these sessions; a session without rows (no plugin, or a provider
 # that reports no cost) counts with OpenCode's estimate from list prices, and
-# the notes say so.
+# the notes say so. Mode: <mode>, or background when the plugin recorded the
+# sessions under AGENT_FACTORY_MODE=background; the notes name the OpenRouter
+# keys the plugin chose, unless only OpenCode's own (/connect) key was used.
 ledger_row() {
     local main="$1" wt="$2" ledger="$factory_dir/ledger.csv" sessions
     [[ -s "$ledger" ]] || { echo "No ledger at $ledger; run bootstrap/02-init-ledger.sh." >&2; return 1; }
